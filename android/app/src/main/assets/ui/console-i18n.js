@@ -383,6 +383,18 @@
     }
   }
 
+  // Brand and version text that the phone shell already shows, or that leaks out of the
+  // dashboard's collapsed sidebar and sits over the page. Only lone text leaves are hidden.
+  const HIDE_TEXT = /^(Hermes Agent|Nous Research|4z|v\d[\d.]*[a-z]?)$/;
+  function tidy(root) {
+    if (!root || !root.querySelectorAll) return;
+    for (const el of root.querySelectorAll('*')) {
+      if (el.children.length === 0 && HIDE_TEXT.test((el.textContent || '').trim())) {
+        el.style.display = 'none';
+      }
+    }
+  }
+
   function walk(node) {
     if (node.nodeType === 3) return translateText(node);
     if (node.nodeType !== 1) return;
@@ -399,11 +411,12 @@
     style.textContent = STYLE;
     (doc.head || doc.documentElement).appendChild(style);
     walk(doc.body);
+    tidy(doc.body);
     const MO = doc.defaultView.MutationObserver;
     if (!MO) return;
     new MO((records) => {
       for (const r of records) {
-        if (r.type === 'childList') r.addedNodes.forEach(walk);
+        if (r.type === 'childList') r.addedNodes.forEach((n) => { walk(n); if (n.nodeType === 1) tidy(n); });
         else if (r.type === 'characterData') translateText(r.target);
         else if (r.type === 'attributes') translateEl(r.target);
       }
