@@ -388,9 +388,15 @@
   const HIDE_TEXT = /^(Hermes Agent|Nous Research|4z|v\d[\d.]*[a-z]?)$/;
   function tidy(root) {
     if (!root || !root.querySelectorAll) return;
+    const win = root.ownerDocument && root.ownerDocument.defaultView;
     for (const el of root.querySelectorAll('*')) {
-      if (el.children.length === 0 && HIDE_TEXT.test((el.textContent || '').trim())) {
-        el.style.display = 'none';
+      if (el.children.length !== 0) continue;
+      const text = (el.textContent || '').trim();
+      if (HIDE_TEXT.test(text)) { el.style.display = 'none'; continue; }
+      // A tiny stray label in the bottom-left corner (the sidebar's leaked version text).
+      if (text.length > 0 && text.length <= 4 && win) {
+        const r = el.getBoundingClientRect();
+        if (r.width < 30 && r.height < 20 && r.left < 24 && r.top > win.innerHeight * 0.6) el.style.display = 'none';
       }
     }
   }
