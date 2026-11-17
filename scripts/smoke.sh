@@ -22,7 +22,7 @@ for mode in ld-path runpath-only; do
   "$S/files/run.sh" --exec ffmpeg -version 2>&1 | first ffmpeg
   "$S/files/run.sh" > "$S/server-$mode.log" 2>&1 &
   PID=$!
-  if ! "$S/files/run.sh" --py "$S/smoke_client.py" "$PORT" smoke-token; then
+  if ! "$S/files/run.sh" --py "$S/smoke_webui.py" "$PORT"; then
     RC=1
     echo "== server log ($mode)"
     dump "$S/server-$mode.log"

@@ -65,7 +65,13 @@ def main() -> int:
     lines.append('if [ "$1" = "--exec" ]; then shift; exec "$@"; fi')
     lines.append('if [ "$1" = "--py" ]; then shift; exec ' + shlex.quote(python) + ' "$@"; fi')
     lines.append('if [ "$1" = "--version" ]; then exec ' + shlex.quote(python) + " -P -c " + shlex.quote(code) + " --version; fi")
-    lines.append(f"exec {shlex.quote(python)} -P -c {shlex.quote(code)} dashboard --host 127.0.0.1 --port \"${{SMOKE_PORT:-{args.port}}}\" --no-open")
+    lines.extend([
+        'unset HERMES_DASHBOARD_SESSION_TOKEN',
+        'export HERMES_WEBUI_HOST=127.0.0.1 HERMES_WEBUI_PORT="${SMOKE_PORT:-9119}"',
+        'export HERMES_WEBUI_AGENT_DIR="$HERMES_PYTHON_SRC_ROOT" HERMES_WEBUI_PASSWORD=smoke-only-password',
+        'export HERMES_ANDROID_READY="$TMPDIR/webui-$HERMES_WEBUI_PORT.ready"',
+        f'exec {shlex.quote(python)} -P {shlex.quote(r + "/webui/android_webui.py")}',
+    ])
     args.out.write_text("\n".join(lines) + "\n")
     args.out.chmod(0o755)
     return 0
