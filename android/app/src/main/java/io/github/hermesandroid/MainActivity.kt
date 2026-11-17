@@ -15,6 +15,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import android.webkit.ConsoleMessage
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -29,12 +30,14 @@ class MainActivity : Activity() {
 
     private lateinit var web: WebView
     @Volatile private var loadedPort = 0
+    private var loadedStart = 0L
+    private lateinit var statusLabel: android.widget.TextView
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     @Volatile private var sharedText: String = ""
 
     private val runtimeListener: (HermesRuntime.Snapshot) -> Unit = { s ->
         runOnUiThread {
-            if (s.port > 0 && s.port != loadedPort) loadShell()
+            if (!isFinishing && !isDestroyed) renderRuntime(HermesRuntime.snapshot)
         }
     }
 
@@ -45,7 +48,15 @@ class MainActivity : Activity() {
 
         web = WebView(this)
         web.setBackgroundColor(Color.parseColor("#F5F4EF"))
-        setContentView(web)
+        statusLabel = android.widget.TextView(this).apply {
+            gravity = android.view.Gravity.CENTER
+            textSize = 16f
+            setPadding(24, 24, 24, 24)
+        }
+        setContentView(android.widget.FrameLayout(this).apply {
+            addView(web, -1, -1)
+            addView(statusLabel, -1, -1)
+        })
 
         with(web.settings) {
             javaScriptEnabled = true
@@ -63,9 +74,6 @@ class MainActivity : Activity() {
         }
 
         web.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
-                AssetServer.handle(this@MainActivity, request.url, loadedPort)
-
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
                 if (AssetServer.isLocal(url, loadedPort)) return false
@@ -105,20 +113,40 @@ class MainActivity : Activity() {
         }
 
         web.setDownloadListener { url, _, _, _, _ -> openExternal(Uri.parse(url)) }
-        web.addJavascriptInterface(Bridge(), "HermesAndroid")
+
 
         HermesRuntime.addListener(runtimeListener)
         if (Prefs.autoStart(this)) {
             HermesService.send(this, HermesService.ACTION_START)
         }
         handleIntent(intent)
-        loadShell()
+        renderRuntime(HermesRuntime.snapshot)
     }
 
-    private fun loadShell() {
-        val port = HermesRuntime.snapshot.port.takeIf { it > 0 } ?: Prefs.port(this)
-        loadedPort = port
-        web.loadUrl("http://127.0.0.1:$port${AssetServer.PREFIX}index.html")
+    private fun renderRuntime(s: HermesRuntime.Snapshot) {
+        if (s.phase != HermesRuntime.Phase.RUNNING || s.webCookie.isEmpty()) {
+            if (loadedPort != 0) web.loadUrl("about:blank")
+            loadedPort = 0
+            loadedStart = 0L
+            statusLabel.text = s.message.ifBlank { "正在准备手机端 Hermes…" }
+            statusLabel.visibility = android.view.View.VISIBLE
+            web.visibility = android.view.View.INVISIBLE
+            return
+        }
+        if (loadedPort == s.port && loadedStart == s.startedAt) return
+        loadedPort = s.port
+        loadedStart = s.startedAt
+        val origin = "http://127.0.0.1:${s.port}/"
+        CookieManager.getInstance().setCookie(origin, s.webCookie) { accepted ->
+            if (isDestroyed || loadedStart != s.startedAt || loadedPort != s.port) return@setCookie
+            if (!accepted) {
+                statusLabel.text = "无法建立 Hermes 本地会话，请重开应用。"
+                return@setCookie
+            }
+            statusLabel.visibility = android.view.View.GONE
+            web.visibility = android.view.View.VISIBLE
+            web.loadUrl(origin)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {

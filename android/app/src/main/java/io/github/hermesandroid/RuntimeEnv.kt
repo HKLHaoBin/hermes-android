@@ -71,13 +71,7 @@ object RuntimeEnv {
     /** Same bootstrap the upstream `bin/hermes` launcher runs, minus the shell wrapper. */
     fun command(root: File, manifest: JSONObject, port: Int): List<String> {
         val python = root.absolutePath + "/" + manifest.getJSONObject("launcher").getString("python")
-        val code = "import os, site, sys; sys.argv[0]='hermes'; " +
-            "site.addsitedir(os.environ['HERMES_SITE']); " +
-            "from hermes_cli.main import main; sys.exit(main())"
-        return listOf(
-            python, "-P", "-c", code,
-            "dashboard", "--host", "127.0.0.1", "--port", port.toString(), "--no-open",
-        )
+        return listOf(python, "-P", File(root, "webui/android_webui.py").absolutePath)
     }
 
     /**

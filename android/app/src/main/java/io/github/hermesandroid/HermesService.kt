@@ -82,6 +82,7 @@ class HermesService : Service() {
 
     private fun runRuntime() {
         val installer = PayloadInstaller(this)
+        var readyFile: File? = null
         try {
             if (!installer.hasPayload()) {
                 fail("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
@@ -117,7 +118,7 @@ class HermesService : Service() {
             val port = choosePort(Prefs.port(this))
             val token = newToken()
             HermesRuntime.update {
-                it.copy(phase = HermesRuntime.Phase.STARTING, progress = -1f, port = port, token = token,
+                it.copy(phase = HermesRuntime.Phase.STARTING, progress = -1f, port = port, token = "", webCookie = "",
                     message = "正在启动 Hermes…", startedAt = System.currentTimeMillis())
             }
             acquireWakeLock()
@@ -129,16 +130,28 @@ class HermesService : Service() {
             val env = pb.environment()
             RuntimeEnv.SCRUB.forEach { env.remove(it) }
             env.putAll(RuntimeEnv.environment(this, installer.root, manifest, token))
-            log("启动：hermes dashboard --port $port")
+            val ready = File(cacheDir, "webui-$token.ready")
+            readyFile = ready
+            env["HERMES_ANDROID_READY"] = ready.absolutePath
+            env["HERMES_WEBUI_HOST"] = "127.0.0.1"
+            env["HERMES_WEBUI_PORT"] = port.toString()
+            env["HERMES_WEBUI_AGENT_DIR"] = env.getValue("HERMES_PYTHON_SRC_ROOT")
+            env["HERMES_WEBUI_PASSWORD"] = token
+            env.remove("HERMES_DASHBOARD_SESSION_TOKEN")
+            log("启动：Hermes WebUI，手机本地端口 $port")
             val proc = pb.start()
             process = proc
             pid = ProcUtil.findChild(cmd[0]) ?: 0
             HermesRuntime.update { it.copy(pid = pid) }
             val pump = thread(name = "hermes-log") { pumpLog(proc) }
 
-            if (waitHealthy(port, proc)) {
-                HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, message = "运行中") }
+            if (waitHealthy(port, proc, ready)) {
+                val cookie = ready.readText()
+                ready.delete()
+                HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
                 log("Hermes 已就绪：http://127.0.0.1:$port")
+            } else if (!stopping && proc.isAliveCompat()) {
+                proc.destroy()
             }
             val code = proc.waitFor()
             pump.join(2000)
@@ -170,6 +183,7 @@ class HermesService : Service() {
             log("错误：${t}")
             fail(t.message ?: t.toString())
         } finally {
+            readyFile?.let { it.delete(); File(it.parentFile, "${it.nameWithoutExtension}.tmp").delete() }
             releaseWakeLock()
         }
     }
@@ -178,17 +192,19 @@ class HermesService : Service() {
         HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.ERROR, message = message, exitCode = code, pid = 0, progress = -1f) }
     }
 
-    private fun waitHealthy(port: Int, proc: java.lang.Process): Boolean {
+    private fun waitHealthy(port: Int, proc: java.lang.Process, ready: File): Boolean {
         val deadline = System.currentTimeMillis() + 10 * 60 * 1000L
         while (System.currentTimeMillis() < deadline) {
             if (stopping || !proc.isAliveCompat()) return false
             try {
-                val conn = URL("http://127.0.0.1:$port/api/status").openConnection() as HttpURLConnection
+                if (!ready.isFile) { Thread.sleep(500); continue }
+                val conn = URL("http://127.0.0.1:$port/health").openConnection(java.net.Proxy.NO_PROXY) as HttpURLConnection
                 conn.connectTimeout = 1500
                 conn.readTimeout = 3000
+                conn.instanceFollowRedirects = false
                 val code = conn.responseCode
                 conn.disconnect()
-                if (code in 200..499) return true
+                if (code == 200 && proc.isAliveCompat()) return true
             } catch (_: Exception) {
             }
             Thread.sleep(700)

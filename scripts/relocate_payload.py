@@ -315,6 +315,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--deb-root", type=Path, required=True)
     ap.add_argument("--web-dist", type=Path, default=None)
+    ap.add_argument("--webui", type=Path, default=None)
     ap.add_argument("--meta", type=Path, default=None)
     ap.add_argument("--drop", action="append", default=[],
                     help="payload-relative path to leave out (repeatable)")
@@ -353,6 +354,10 @@ def main() -> int:
             raise SystemExit(f"web dist has no index.html: {args.web_dist}")
         shutil.copytree(args.web_dist, stage / "web_dist")
         log("added web_dist")
+
+    if args.webui:
+        shutil.copytree(args.webui, stage / "webui")
+        shutil.copy2(Path(__file__).with_name("android_webui.py"), stage / "webui/android_webui.py")
 
     links = relink(stage)
     prune(stage, links)
@@ -401,6 +406,10 @@ def main() -> int:
         "zip_bytes": zip_path.stat().st_size,
     }
     manifest["payload_id"] = f"{meta.get('version', 'dev')}-{meta.get('sha256', '')[:12]}"
+    if args.webui:
+        import hashlib
+        with zip_path.open('rb') as stream:
+            manifest["payload_id"] += "-webui-" + hashlib.file_digest(stream, 'sha256').hexdigest()[:16]
     (out / "payload.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
 
     log(f"{files} files, {total / 1e6:.1f} MB -> payload.zip {manifest['zip_bytes'] / 1e6:.1f} MB")

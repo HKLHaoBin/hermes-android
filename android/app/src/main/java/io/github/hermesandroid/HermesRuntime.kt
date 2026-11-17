@@ -16,6 +16,7 @@ object HermesRuntime {
         val progress: Float = -1f,
         val port: Int = 0,
         val token: String = "",
+        val webCookie: String = "",
         val pid: Int = 0,
         val startedAt: Long = 0L,
         val payloadId: String = "",

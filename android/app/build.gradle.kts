@@ -15,7 +15,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.hermesandroid"
+        applicationId = "io.github.hkhaobin.hermeswebui"
         // The upstream runtime targets Android API 24 (android_24_arm64_v8a wheels).
         minSdk = 24
         // Deliberately 28, like Termux: from API 29 on, Android forbids executing
