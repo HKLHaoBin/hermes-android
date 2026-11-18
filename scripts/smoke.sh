@@ -14,6 +14,9 @@ for mode in ld-path runpath-only; do
   if [ "$mode" = runpath-only ]; then export NO_LD_LIBRARY_PATH=1; PORT=9120; fi
   export SMOKE_PORT=$PORT
   echo "===== pass: $mode"
+  if ! "$S/files/run.sh" --py "$S/smoke_runtime_fixes.py" "$R"; then
+    RC=1
+  fi
   # Resolved through the PATH the app sets, like Hermes' own tool lookups.
   "$S/files/run.sh" --exec python --version 2>&1 | first python
   "$S/files/run.sh" --exec node --version 2>&1 | first node

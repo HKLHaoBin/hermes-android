@@ -358,6 +358,8 @@ def main() -> int:
     if args.webui:
         shutil.copytree(args.webui, stage / "webui")
         shutil.copy2(Path(__file__).with_name("android_webui.py"), stage / "webui/android_webui.py")
+        from android_runtime_fixes import patch_payload
+        patch_payload(stage)
 
     links = relink(stage)
     prune(stage, links)

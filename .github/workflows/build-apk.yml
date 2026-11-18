@@ -210,7 +210,7 @@ jobs:
             --dest sim/files/hermes-agent --final-root "$FINAL/files/hermes-agent"
           python3 scripts/smoke_env.py --manifest build/payload/payload.json \
             --root "$FINAL/files/hermes-agent" --files "$FINAL/files" --out sim/files/run.sh
-          cp scripts/smoke_webui.py scripts/smoke.sh sim/
+          cp scripts/smoke_webui.py scripts/smoke_runtime_fixes.py scripts/smoke.sh sim/
           chmod -R a+rwX sim
           cat sim/files/run.sh
 
@@ -230,4 +230,5 @@ jobs:
             -v "$PWD/sim:$FINAL" --entrypoint /system/bin/sh "$IMAGE" "$FINAL/smoke.sh"
           test "$(grep -c SMOKE_OK build/logs/smoke.log)" = 2
           test "$(grep -c TERMINAL_OK build/logs/smoke.log)" = 2
+          test "$(grep -c ANDROID_RUNTIME_FIXES_OK build/logs/smoke.log)" = 2
           echo "::notice title=smoke output::$(tail -n 70 build/logs/smoke.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
