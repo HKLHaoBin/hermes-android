@@ -10,3 +10,4 @@ android/app/src/main/assets/payload/
 *.keystore
 .idea/
 __pycache__/
+/.release-signing/

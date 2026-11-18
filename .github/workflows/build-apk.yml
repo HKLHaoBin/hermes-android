@@ -153,41 +153,39 @@ jobs:
           python3 -c "import json;m=json.load(open('build/payload/payload.json'));print(json.dumps({k:m[k] for k in ('payload_id','launcher','ld_library_path','path','node','cert_file','missing_libs','runpath','file_count','total_bytes','zip_bytes')},indent=1,ensure_ascii=False))" > build/payload-summary.txt
           echo "::notice title=payload::$(sed 's/%/%25/g' build/payload-summary.txt | awk '{printf "%s%%0A", $0}')"
 
-      - name: Set up signing key
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
-            {
-              echo "HERMES_ANDROID_KEYSTORE=$RUNNER_TEMP/release.jks"
-              echo "HERMES_ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
-              echo "HERMES_ANDROID_KEY_ALIAS=$KEY_ALIAS"
-              echo "HERMES_ANDROID_KEY_PASSWORD=${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
-            } >> "$GITHUB_ENV"
-            echo "Signing with the release keystore from repository secrets."
-          else
-            echo "::warning::未配置 ANDROID_KEYSTORE_BASE64，本次用临时调试签名。每次构建签名都不同，升级安装会失败，需要先卸载（会清空数据）。见 README 的「签名」一节。"
-          fi
-
-      - name: Build APK
+      - name: Build APK with the persistent release key
         working-directory: android
         env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          HERMES_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           HERMES_ANDROID_VERSION_CODE: ${{ github.run_number }}
           HERMES_ANDROID_VERSION_NAME: ${{ steps.upstream.outputs.version }}
-        run: ../scripts/ci_run.sh gradle gradle assembleRelease --no-daemon --stacktrace
+        run: |
+          if [[ -z "$KEYSTORE_B64" || -z "$HERMES_ANDROID_KEYSTORE_PASSWORD" ]]; then
+            echo '::error::Persistent release signing secrets are required. No debug fallback.'
+            exit 1
+          fi
+          umask 077
+          export HERMES_ANDROID_KEYSTORE="$(mktemp "$RUNNER_TEMP/hermes-signing.XXXXXXXX.p12")"
+          trap 'rm -f -- "$HERMES_ANDROID_KEYSTORE"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$HERMES_ANDROID_KEYSTORE"
+          unset KEYSTORE_B64
+          export HERMES_ANDROID_KEY_ALIAS=hermes-android
+          export HERMES_ANDROID_KEY_PASSWORD="$HERMES_ANDROID_KEYSTORE_PASSWORD"
+          ../scripts/ci_run.sh gradle gradle assembleRelease --no-daemon --stacktrace
 
       - name: Verify APK signature (v1 + v2 + v3)
         run: |
           APK=android/app/build/outputs/apk/release/app-release.apk
           APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
-          { echo "apksigner: $APKSIGNER"; "$APKSIGNER" verify --verbose --min-sdk-version 21 "$APK" 2>&1; echo "--- META-INF"; unzip -l "$APK" | grep META-INF; } > build/apksigner.txt || true
-          echo "::notice title=apk signature::$(head -c 3000 build/apksigner.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+          "$APKSIGNER" verify --verbose --print-certs --min-sdk-version 21 "$APK" > build/apksigner.txt 2>&1 || { cat build/apksigner.txt; exit 1; }
           grep -qi "v1 scheme (JAR signing): true" build/apksigner.txt
           grep -qi "v2 scheme (APK Signature Scheme v2): true" build/apksigner.txt
+          grep -qi "v3 scheme (APK Signature Scheme v3): true" build/apksigner.txt
+          expected=$(tr -d '\r\n' < android/release-cert.sha256)
+          actual=$(awk -F ': ' '/^Signer #[0-9]+ certificate SHA-256 digest:/ {print tolower($2)}' build/apksigner.txt)
+          [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" = "$expected" ]] || { echo '::error::Unexpected release signer'; exit 1; }
+          printf 'Verified release certificate SHA-256: %s\n' "$actual"
 
       - name: Collect APK
         id: apk
@@ -196,6 +194,7 @@ jobs:
           NAME="hermes-android-${{ steps.upstream.outputs.version }}-${{ github.run_number }}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "dist/$NAME"
           cp build/payload/payload.json dist/payload.json
+          cp android/release-cert.sha256 dist/release-cert.sha256
           (cd dist && sha256sum "$NAME" > "$NAME.sha256")
           ls -lh dist
           echo "name=$NAME" >> "$GITHUB_OUTPUT"

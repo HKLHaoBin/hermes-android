@@ -15,7 +15,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.hkhaobin.hermeswebui.dualfix"
+        applicationId = "io.github.hkhaobin.hermeswebui"
         // The upstream runtime targets Android API 24 (android_24_arm64_v8a wheels).
         minSdk = 24
         // Deliberately 28, like Termux: from API 29 on, Android forbids executing
@@ -41,6 +41,7 @@ android {
         if (hasReleaseKey) {
             create("release") {
                 storeFile = keystoreFile
+                storeType = "PKCS12"
                 storePassword = System.getenv("HERMES_ANDROID_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("HERMES_ANDROID_KEY_ALIAS")
                 keyPassword = System.getenv("HERMES_ANDROID_KEY_PASSWORD")
@@ -54,7 +55,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = if (hasReleaseKey) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
         }
         debug {
             applicationIdSuffix = ".debug"
