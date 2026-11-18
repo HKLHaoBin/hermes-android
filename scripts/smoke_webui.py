@@ -28,6 +28,7 @@ except HTTPError as error:
     assert error.code == 401, error.code
 else:
     raise AssertionError('Unauthenticated session list unexpectedly accessible')
+page = ''
 for path, expected in [('/', b'Hermes'), ('/api/sessions', b'sessions')]:
     with opener.open(Request(root + path, headers={'Cookie': cookie}), timeout=10) as response:
         assert response.status == 200 and response.geturl() == root + path
@@ -43,7 +44,9 @@ for asset in assets:
     with opener.open(root + '/' + asset, timeout=10) as response:
         assert response.status == 200 and len(response.read()) > 300, asset
 
-csrf = re.search(r'csrfToken:"([^"]+)"', page)[1]
+csrf_match = re.search(r'csrfToken:"([^"]+)"', page)
+assert csrf_match is not None, 'Authenticated WebUI did not supply a CSRF token'
+csrf = csrf_match[1]
 
 
 def post(path, body, auth=True, token=True):
