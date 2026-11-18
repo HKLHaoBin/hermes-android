@@ -38,6 +38,8 @@ for path, expected in [('/', b'Hermes'), ('/api/sessions', b'sessions')]:
             page = body.decode()
 print('SMOKE_OK')
 
+assert re.search(r'<div class="composer-left">(?:(?!</div>).)*<button[^>]*id="androidComposerTerminal"[^>]*onclick="cmdTerminal\(\)"', page, re.S), 'Terminal entry missing from composer toolbar'
+
 assets = re.findall(r'(static/vendor/android-terminal/[^"\s]+)', page)
 assert len(assets) == 4, 'Expected four local terminal assets'
 for asset in assets:

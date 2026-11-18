@@ -42,6 +42,13 @@ def vendor(match):
 html, count = pattern.subn(vendor, html)
 if count != 4:
     raise SystemExit(f'Expected four pinned terminal assets, got {count}')
+anchor_button = '            <button type="button" class="icon-btn has-tooltip" id="btnSavedPrompts"'
+if html.count(anchor_button) != 1:
+    raise SystemExit('Composer toolbar insertion point changed')
+html = html.replace(anchor_button, '''            <button type="button" class="icon-btn has-tooltip" id="androidComposerTerminal" data-tooltip="Terminal" data-i18n-title="terminal_title" data-i18n-aria-label="terminal_title" aria-label="Terminal" onclick="cmdTerminal()">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 6 6 6-6 6m9 0h7"/></svg>
+            </button>
+''' + anchor_button)
 index.write_text(html, encoding='utf-8')
 
 terminal = root / 'api/terminal.py'

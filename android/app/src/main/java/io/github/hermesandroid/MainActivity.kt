@@ -32,7 +32,7 @@ class MainActivity : Activity() {
     @Volatile private var loadedPort = 0
     private var loadedStart = 0L
     private lateinit var statusLabel: android.widget.TextView
-    private lateinit var terminalButton: android.widget.Button
+
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     @Volatile private var sharedText: String = ""
 
@@ -54,26 +54,9 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(24, 24, 24, 24)
         }
-        terminalButton = android.widget.Button(this).apply {
-            text = "终端"
-            isEnabled = false
-            setOnClickListener {
-                val current = Uri.parse(web.url.orEmpty())
-                if (loadedPort <= 0 || current.scheme != "http" || current.host != "127.0.0.1" || current.port != loadedPort) return@setOnClickListener
-                web.evaluateJavascript("typeof cmdTerminal === 'function' ? (cmdTerminal(), true) : false") { opened ->
-                    if (opened != "true") Toast.makeText(this@MainActivity, "聊天页面载入后即可打开终端", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-        setContentView(android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
-            addView(terminalButton, android.widget.LinearLayout.LayoutParams(-2, -2).apply {
-                gravity = android.view.Gravity.END
-            })
-            addView(android.widget.FrameLayout(this@MainActivity).apply {
-                addView(web, -1, -1)
-                addView(statusLabel, -1, -1)
-            }, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+        setContentView(android.widget.FrameLayout(this).apply {
+            addView(web, -1, -1)
+            addView(statusLabel, -1, -1)
         })
 
         with(web.settings) {
@@ -143,7 +126,7 @@ class MainActivity : Activity() {
 
     private fun renderRuntime(s: HermesRuntime.Snapshot) {
         if (s.phase != HermesRuntime.Phase.RUNNING || s.webCookie.isEmpty()) {
-            terminalButton.isEnabled = false
+
             if (loadedPort != 0) web.loadUrl("about:blank")
             loadedPort = 0
             loadedStart = 0L
@@ -164,7 +147,7 @@ class MainActivity : Activity() {
             }
             statusLabel.visibility = android.view.View.GONE
             web.visibility = android.view.View.VISIBLE
-            terminalButton.isEnabled = true
+
             web.loadUrl(origin)
         }
     }
