@@ -99,6 +99,39 @@ jobs:
           path: webui-source
           persist-credentials: false
 
+      - name: Check out Dashboard matching the packaged Agent
+        uses: actions/checkout@v5
+        with:
+          repository: NousResearch/hermes-agent
+          ref: ${{ steps.upstream.outputs.commit }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Read Dashboard toolchain lock
+        id: dashboard-tools
+        run: |
+          test "$(git -C upstream rev-parse HEAD)" = '${{ steps.upstream.outputs.commit }}'
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p = json.load(open('upstream/pm/lock.json'))['packages']
+          for tool in ('node', 'pnpm'):
+              print(f'{tool}={p[tool]["version"]}')
+          PY
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ steps.dashboard-tools.outputs.node }}
+
+      - name: Build the official Dashboard
+        working-directory: upstream
+        env:
+          DASHBOARD_PNPM: ${{ steps.dashboard-tools.outputs.pnpm }}
+        run: |
+          npm install -g "pnpm@$DASHBOARD_PNPM"
+          pnpm install --frozen-lockfile --filter 'web...'
+          pnpm --dir web run build
+          test -f hermes_cli/web_dist/index.html
+
       - name: Stage WebUI source allowlist
         run: |
           mkdir -p build/webui
@@ -111,6 +144,7 @@ jobs:
           scripts/ci_run.sh relocate python3 scripts/relocate_payload.py \
             --deb-root build/deb/root \
             --webui build/webui \
+            --web-dist upstream/hermes_cli/web_dist \
             --meta build/deb/meta.json \
             --runpath \
             --out build/payload

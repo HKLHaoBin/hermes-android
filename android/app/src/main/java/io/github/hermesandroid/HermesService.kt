@@ -30,6 +30,7 @@ class HermesService : Service() {
 
     private var worker: Thread? = null
     @Volatile private var process: java.lang.Process? = null
+    @Volatile private var dashboard: java.lang.Process? = null
     @Volatile private var pid: Int = 0
     @Volatile private var stopping = false
     private var wakeLock: PowerManager.WakeLock? = null
@@ -119,6 +120,7 @@ class HermesService : Service() {
             val token = newToken()
             HermesRuntime.update {
                 it.copy(phase = HermesRuntime.Phase.STARTING, progress = -1f, port = port, token = "", webCookie = "",
+                    dashboardPort = 0, dashboardCookie = "", dashboardError = false,
                     message = "正在启动 Hermes…", startedAt = System.currentTimeMillis())
             }
             acquireWakeLock()
@@ -150,6 +152,7 @@ class HermesService : Service() {
                 ready.delete()
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
                 log("Hermes 已就绪：http://127.0.0.1:$port")
+                thread(name = "hermes-dashboard") { launchDashboard(installer.root, manifest, port, proc) }
             } else if (!stopping && proc.isAliveCompat()) {
                 proc.destroy()
             }
@@ -184,8 +187,66 @@ class HermesService : Service() {
             fail(t.message ?: t.toString())
         } finally {
             readyFile?.let { it.delete(); File(it.parentFile, "${it.nameWithoutExtension}.tmp").delete() }
+            stopDashboard()
             releaseWakeLock()
         }
+    }
+
+    private fun launchDashboard(root: File, manifest: org.json.JSONObject, webPort: Int, owner: java.lang.Process) {
+        val ready = File(cacheDir, "dashboard-${newToken()}.ready")
+        var child: java.lang.Process? = null
+        try {
+            val port = choosePort(9120, webPort)
+            val env = RuntimeEnv.environment(this, root, manifest, "").toMutableMap().apply {
+                remove("HERMES_DASHBOARD_SESSION_TOKEN")
+                put("HERMES_ANDROID_DASHBOARD_PORT", port.toString())
+                put("HERMES_ANDROID_DASHBOARD_READY", ready.absolutePath)
+            }
+            val builder = ProcessBuilder(env.getValue("HERMES_PYTHON"), "-P", File(root, "webui/android_dashboard.py").absolutePath)
+                .directory(RuntimeEnv.home(this)).redirectErrorStream(true)
+            RuntimeEnv.SCRUB.forEach { builder.environment().remove(it) }
+            builder.environment().putAll(env)
+            val launched = synchronized(this) {
+                if (stopping || process !== owner || !owner.isAliveCompat()) return
+                builder.start().also { dashboard = it; child = it }
+            }
+            thread(name = "hermes-dashboard-output", isDaemon = true) {
+                launched.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line ->
+                        val errorClass = Regex("^([A-Za-z]+(?:Error|Exception)):").find(line)?.groupValues?.get(1)
+                        if (errorClass != null) log("Dashboard: $errorClass")
+                    }
+                }
+            }
+            val deadline = android.os.SystemClock.elapsedRealtime() + 90_000L
+            while (launched.isAliveCompat() && !ready.isFile && !stopping && android.os.SystemClock.elapsedRealtime() < deadline) {
+                Thread.sleep(250)
+            }
+            if (stopping || process !== owner) return
+            check(launched.isAliveCompat() && ready.isFile)
+            val cookie = ready.readText()
+            ready.delete()
+            HermesRuntime.update { it.copy(dashboardPort = port, dashboardCookie = cookie) }
+            log("官方 Dashboard 已就绪：本机端口 $port")
+            launched.waitFor()
+        } catch (_: Exception) {
+            log("官方 Dashboard 启动失败")
+        } finally {
+            synchronized(this) {
+                if (dashboard === child) stopDashboard()
+                if (!stopping && process === owner) {
+                    HermesRuntime.update { it.copy(dashboardPort = 0, dashboardCookie = "", dashboardError = true) }
+                }
+            }
+            ready.delete()
+            File(ready.parentFile, "${ready.nameWithoutExtension}.tmp").delete()
+        }
+    }
+
+    @Synchronized
+    private fun stopDashboard() {
+        dashboard?.destroy()
+        dashboard = null
     }
 
     private fun fail(message: String, code: Int? = null) {
@@ -234,6 +295,7 @@ class HermesService : Service() {
 
     private fun stopRuntime() {
         stopping = true
+        stopDashboard()
         val proc = process
         if (proc != null || pid > 0) {
             HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
@@ -250,11 +312,12 @@ class HermesService : Service() {
         HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
     }
 
-    private fun choosePort(preferred: Int): Int {
+    private fun choosePort(preferred: Int, excluded: Int = 0): Int {
         for (candidate in listOf(preferred) + (9120..9199)) {
+            if (candidate == excluded) continue
             try {
                 ServerSocket(candidate, 1, InetAddress.getByName("127.0.0.1")).close()
-                if (candidate != preferred) Prefs.setPort(this, candidate)
+                if (candidate != preferred && excluded == 0) Prefs.setPort(this, candidate)
                 return candidate
             } catch (_: Exception) {
             }

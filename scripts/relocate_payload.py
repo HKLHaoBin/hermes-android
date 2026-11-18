@@ -358,6 +358,7 @@ def main() -> int:
     if args.webui:
         shutil.copytree(args.webui, stage / "webui")
         shutil.copy2(Path(__file__).with_name("android_webui.py"), stage / "webui/android_webui.py")
+        shutil.copy2(Path(__file__).with_name("android_dashboard.py"), stage / "webui/android_dashboard.py")
 
     links = relink(stage)
     prune(stage, links)
