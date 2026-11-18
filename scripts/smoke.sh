@@ -27,9 +27,6 @@ for mode in ld-path runpath-only; do
     echo "== server log ($mode)"
     dump "$S/server-$mode.log"
   fi
-  if ! "$S/files/run.sh" --py "$S/smoke_dashboard.py" "$R" "$((PORT + 10))"; then
-    RC=1
-  fi
   while IFS= read -r line; do
     case "$line" in *"out of sync"*|*Traceback*) echo "server: $line" ;; esac
   done < "$S/server-$mode.log"

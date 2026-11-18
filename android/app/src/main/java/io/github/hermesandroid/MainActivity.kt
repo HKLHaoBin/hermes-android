@@ -29,14 +29,10 @@ import android.widget.Toast
 class MainActivity : Activity() {
 
     private lateinit var web: WebView
-    private lateinit var dashboardWeb: WebView
-    private lateinit var body: android.widget.FrameLayout
-    private var showDashboard = false
-    private var loadedDashboard = 0
-    private var loadedDashboardStart = 0L
     @Volatile private var loadedPort = 0
     private var loadedStart = 0L
     private lateinit var statusLabel: android.widget.TextView
+    private lateinit var terminalButton: android.widget.Button
     private var fileCallback: ValueCallback<Array<Uri>>? = null
     @Volatile private var sharedText: String = ""
 
@@ -58,41 +54,26 @@ class MainActivity : Activity() {
             textSize = 16f
             setPadding(24, 24, 24, 24)
         }
-        dashboardWeb = WebView(this).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            webViewClient = object : WebViewClient() {
-                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                    val url = request.url
-                    if (url.scheme == "http" && url.host == "127.0.0.1" && url.port == loadedDashboard) return false
-                    if (request.isForMainFrame) openExternal(url)
-                    return true
+        terminalButton = android.widget.Button(this).apply {
+            text = "终端"
+            isEnabled = false
+            setOnClickListener {
+                val current = Uri.parse(web.url.orEmpty())
+                if (loadedPort <= 0 || current.scheme != "http" || current.host != "127.0.0.1" || current.port != loadedPort) return@setOnClickListener
+                web.evaluateJavascript("typeof cmdTerminal === 'function' ? (cmdTerminal(), true) : false") { opened ->
+                    if (opened != "true") Toast.makeText(this@MainActivity, "聊天页面载入后即可打开终端", Toast.LENGTH_SHORT).show()
                 }
             }
         }
-        body = android.widget.FrameLayout(this).apply {
-            addView(web, -1, -1)
-            addView(dashboardWeb, -1, -1)
-            addView(statusLabel, -1, -1)
-        }
-        val tabs = android.widget.LinearLayout(this)
-        fun tab(label: String, dashboard: Boolean) {
-            tabs.addView(android.widget.Button(this).apply {
-                text = label
-                setOnClickListener {
-                    showDashboard = dashboard
-                    renderRuntime(HermesRuntime.snapshot)
-                }
-            }, android.widget.LinearLayout.LayoutParams(0, -2, 1f))
-        }
-        tab("聊天", false)
-        tab("官方设置", true)
         setContentView(android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            addView(tabs, -1, -2)
-            addView(body, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(terminalButton, android.widget.LinearLayout.LayoutParams(-2, -2).apply {
+                gravity = android.view.Gravity.END
+            })
+            addView(android.widget.FrameLayout(this@MainActivity).apply {
+                addView(web, -1, -1)
+                addView(statusLabel, -1, -1)
+            }, android.widget.LinearLayout.LayoutParams(-1, 0, 1f))
         })
 
         with(web.settings) {
@@ -161,34 +142,8 @@ class MainActivity : Activity() {
     }
 
     private fun renderRuntime(s: HermesRuntime.Snapshot) {
-        val running = s.phase == HermesRuntime.Phase.RUNNING
-        val dashboardReady = running && s.dashboardPort > 0 && s.dashboardCookie.isNotEmpty()
-        dashboardWeb.visibility = if (showDashboard && dashboardReady) android.view.View.VISIBLE else android.view.View.INVISIBLE
-        web.visibility = if (!showDashboard && running) android.view.View.VISIBLE else android.view.View.INVISIBLE
-        if (!dashboardReady && loadedDashboard != 0) {
-            loadedDashboard = 0
-            dashboardWeb.loadUrl("about:blank")
-        }
-        if (showDashboard) {
-            statusLabel.visibility = if (dashboardReady) android.view.View.GONE else android.view.View.VISIBLE
-            statusLabel.text = if (s.dashboardError) "官方设置启动失败，聊天仍可使用。" else "正在准备官方设置…"
-            if (!dashboardReady || (loadedDashboard == s.dashboardPort && loadedDashboardStart == s.startedAt)) return
-            loadedDashboard = s.dashboardPort
-            loadedDashboardStart = s.startedAt
-            val origin = "http://127.0.0.1:${s.dashboardPort}/"
-            CookieManager.getInstance().setCookie(origin, s.dashboardCookie) { accepted ->
-                if (isDestroyed || loadedDashboard != s.dashboardPort || loadedDashboardStart != s.startedAt) return@setCookie
-                if (accepted) dashboardWeb.loadUrl(origin) else {
-                    loadedDashboard = 0
-                    if (showDashboard) {
-                        statusLabel.visibility = android.view.View.VISIBLE
-                        statusLabel.text = "无法建立官方设置会话。"
-                    }
-                }
-            }
-            return
-        }
         if (s.phase != HermesRuntime.Phase.RUNNING || s.webCookie.isEmpty()) {
+            terminalButton.isEnabled = false
             if (loadedPort != 0) web.loadUrl("about:blank")
             loadedPort = 0
             loadedStart = 0L
@@ -197,10 +152,7 @@ class MainActivity : Activity() {
             web.visibility = android.view.View.INVISIBLE
             return
         }
-        if (loadedPort == s.port && loadedStart == s.startedAt) {
-            statusLabel.visibility = android.view.View.GONE
-            return
-        }
+        if (loadedPort == s.port && loadedStart == s.startedAt) return
         loadedPort = s.port
         loadedStart = s.startedAt
         val origin = "http://127.0.0.1:${s.port}/"
@@ -210,10 +162,9 @@ class MainActivity : Activity() {
                 statusLabel.text = "无法建立 Hermes 本地会话，请重开应用。"
                 return@setCookie
             }
-            if (!showDashboard) {
-                statusLabel.visibility = android.view.View.GONE
-                web.visibility = android.view.View.VISIBLE
-            }
+            statusLabel.visibility = android.view.View.GONE
+            web.visibility = android.view.View.VISIBLE
+            terminalButton.isEnabled = true
             web.loadUrl(origin)
         }
     }
@@ -235,13 +186,6 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (showDashboard) {
-            if (dashboardWeb.canGoBack()) dashboardWeb.goBack() else {
-                showDashboard = false
-                renderRuntime(HermesRuntime.snapshot)
-            }
-            return
-        }
         web.evaluateJavascript("(window.hermesBack && window.hermesBack()) ? 'handled' : ''") { result ->
             if (result?.contains("handled") == true) return@evaluateJavascript
             if (web.canGoBack()) {
@@ -283,7 +227,6 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         HermesRuntime.removeListener(runtimeListener)
-        dashboardWeb.destroy()
         web.destroy()
         super.onDestroy()
     }

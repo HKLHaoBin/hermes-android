@@ -99,44 +99,13 @@ jobs:
           path: webui-source
           persist-credentials: false
 
-      - name: Check out Dashboard matching the packaged Agent
-        uses: actions/checkout@v5
-        with:
-          repository: NousResearch/hermes-agent
-          ref: ${{ steps.upstream.outputs.commit }}
-          path: upstream
-          persist-credentials: false
-
-      - name: Read Dashboard toolchain lock
-        id: dashboard-tools
-        run: |
-          test "$(git -C upstream rev-parse HEAD)" = '${{ steps.upstream.outputs.commit }}'
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          p = json.load(open('upstream/pm/lock.json'))['packages']
-          for tool in ('node', 'pnpm'):
-              print(f'{tool}={p[tool]["version"]}')
-          PY
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: ${{ steps.dashboard-tools.outputs.node }}
-
-      - name: Build the official Dashboard
-        working-directory: upstream
-        env:
-          DASHBOARD_PNPM: ${{ steps.dashboard-tools.outputs.pnpm }}
-        run: |
-          npm install -g "pnpm@$DASHBOARD_PNPM"
-          pnpm install --frozen-lockfile --filter 'web...'
-          pnpm --dir web run build
-          test -f hermes_cli/web_dist/index.html
 
       - name: Stage WebUI source allowlist
         run: |
           mkdir -p build/webui
           git -C webui-source archive HEAD LICENSE server.py api static mcp_server.py managed_agent_startup.py bootstrap.py scripts | tar -x -C build/webui
           test -f build/webui/static/index.html
+          python3 scripts/stage_android_terminal.py build/webui
           git -C webui-source rev-parse HEAD > build/webui/ANDROID_WEBUI_REVISION
 
       - name: Relocate runtime for the app
@@ -144,7 +113,6 @@ jobs:
           scripts/ci_run.sh relocate python3 scripts/relocate_payload.py \
             --deb-root build/deb/root \
             --webui build/webui \
-            --web-dist upstream/hermes_cli/web_dist \
             --meta build/deb/meta.json \
             --runpath \
             --out build/payload
@@ -183,7 +151,8 @@ jobs:
           grep -qi "v2 scheme (APK Signature Scheme v2): true" build/apksigner.txt
           grep -qi "v3 scheme (APK Signature Scheme v3): true" build/apksigner.txt
           expected=$(tr -d '\r\n' < android/release-cert.sha256)
-          actual=$(awk -F ': ' '/^Signer #[0-9]+ certificate SHA-256 digest:/ {print tolower($2)}' build/apksigner.txt)
+          actual=$(awk '/^Signer.*certificate SHA-256 digest:/ {print tolower($NF)}' build/apksigner.txt | sort -u)
+          grep -Ei 'Signer|Number of signers' build/apksigner.txt
           [[ "$expected" =~ ^[0-9a-f]{64}$ && "$actual" = "$expected" ]] || { echo '::error::Unexpected release signer'; exit 1; }
           printf 'Verified release certificate SHA-256: %s\n' "$actual"
 
@@ -240,7 +209,7 @@ jobs:
             --dest sim/files/hermes-agent --final-root "$FINAL/files/hermes-agent"
           python3 scripts/smoke_env.py --manifest build/payload/payload.json \
             --root "$FINAL/files/hermes-agent" --files "$FINAL/files" --out sim/files/run.sh
-          cp scripts/smoke_webui.py scripts/smoke_dashboard.py scripts/smoke.sh sim/
+          cp scripts/smoke_webui.py scripts/smoke.sh sim/
           chmod -R a+rwX sim
           cat sim/files/run.sh
 
@@ -259,5 +228,5 @@ jobs:
             --tmpfs $T/tmp:mode=0777 \
             -v "$PWD/sim:$FINAL" --entrypoint /system/bin/sh "$IMAGE" "$FINAL/smoke.sh"
           test "$(grep -c SMOKE_OK build/logs/smoke.log)" = 2
-          test "$(grep -c DASHBOARD_OK build/logs/smoke.log)" = 2
+          test "$(grep -c TERMINAL_OK build/logs/smoke.log)" = 2
           echo "::notice title=smoke output::$(tail -n 70 build/logs/smoke.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
