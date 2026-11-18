@@ -66,5 +66,5 @@ def publish_ready(*args, **kwargs):
 
 web_server._build_uvicorn_server = guarded_server
 web_server._on_server_started = publish_ready
-sys.argv[:] = ['hermes', 'dashboard', '--host', '127.0.0.1', '--port', str(port), '--no-open', '--build-mode', 'skip']
+sys.argv[:] = ['hermes', 'dashboard', '--host', '127.0.0.1', '--port', str(port), '--no-open', '--skip-build']
 sys.exit(main())
