@@ -1,0 +1,10 @@
+{
+  "package": "hermes-agent",
+  "architecture": "aarch64",
+  "channel": "canary",
+  "version": "0.23.2~canary.20261118T064620Z-1",
+  "filename": "pool/h/hermes-agent_0.23.2~canary.20261118T064620Z-1_aarch64.deb",
+  "sha256": "47d65ab4fceb5de40ed010bc94ce73ff0ae2b411f8a3587472e909d391e7e793",
+  "size": 184902680,
+  "source_commit": "f7e2898aaefc8f967dbf7345e3999a65672fe60e"
+}

@@ -41,7 +41,7 @@
 
 只通过 GitHub Actions 生成 APK：推送 `main` 或手动运行 **Build APK**。
 
-- 官方 Android arm64 运行时由 `runtime.lock` 固定；下载时校验 APT 签名与包 SHA-256。
+- 官方 Android arm64 运行时由 `runtime.lock` 固定；下载时校验 APT 签名与包 SHA-256。当前索引不再列出旧版时，只允许按 `runtime-package.lock.json` 获取同一官方包池文件，并核对预先审查的 SHA-256、大小与内嵌源码提交；不改用最新版本。
 - WebUI 从工作流固定的公开提交取允许列表；不上传本机 Windows WebUI、用户配置、密钥或会话。
 - 构建阶段打入 Android 兼容补丁、本地终端资源和文件导入界面。
 - 缺少长期签名材料时失败，不退回临时调试签名。构建后验证 v1/v2/v3 和固定证书 SHA-256。

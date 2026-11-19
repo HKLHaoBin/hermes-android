@@ -33,6 +33,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Runtime package lock regressions
+        run: python3 scripts/test_fetch_payload.py
+
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk || true
@@ -57,14 +60,16 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends gpgv gnupg binutils dpkg patchelf >/dev/null
+          EXTRA=()
           if [ "$CHANNEL_INPUT" = locked ]; then
             . ./runtime.lock
             CHANNEL="$HERMES_RUNTIME_CHANNEL"; VERSION="${VERSION_INPUT:-$HERMES_RUNTIME_VERSION}"
+            EXTRA=(--package-lock runtime-package.lock.json)
           else
             CHANNEL="$CHANNEL_INPUT"; VERSION="$VERSION_INPUT"
           fi
           echo "runtime: channel=$CHANNEL version=${VERSION:-latest}"
-          scripts/ci_run.sh fetch python3 scripts/fetch_payload.py --channel "$CHANNEL" --version "$VERSION" --out build/deb
+          scripts/ci_run.sh fetch python3 scripts/fetch_payload.py --channel "$CHANNEL" --version "$VERSION" "${EXTRA[@]}" --out build/deb
           cat build/deb/meta.json
 
       - name: Inspect runtime layout

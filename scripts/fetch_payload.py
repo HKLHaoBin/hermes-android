@@ -23,6 +23,7 @@ import gzip
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -134,12 +135,55 @@ def newest(candidates: list[dict[str, str]]) -> dict[str, str]:
     return best
 
 
+def load_package_lock(path: Path) -> dict:
+    """Read a reviewed immutable package identity, not a user-supplied URL."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    required = {"package", "architecture", "channel", "version", "filename", "sha256", "size", "source_commit"}
+    if not isinstance(data, dict) or set(data) != required:
+        raise ValueError("Invalid runtime package lock fields")
+    if data["package"] != PACKAGE or data["architecture"] != ARCH or data["channel"] not in {"stable", "canary"}:
+        raise ValueError("Wrong package, architecture or channel in runtime lock")
+    version = data["version"]
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+~_-]*", version):
+        raise ValueError("Invalid pinned package version")
+    if data["filename"] != f"pool/h/{PACKAGE}_{version}_{ARCH}.deb":
+        raise ValueError("Pinned package path does not match its literal identity")
+    for field, length in [("sha256", 64), ("source_commit", 40)]:
+        value = data[field]
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + r"}", value):
+            raise ValueError(f"Invalid pinned {field}")
+    if type(data["size"]) is not int or not 0 < data["size"] < 2**31:
+        raise ValueError("Invalid pinned package size")
+    return data
+
+
+def select_package(stanzas, version, channel, package_lock=None):
+    candidates = [s for s in stanzas if s.get("Package") == PACKAGE and
+                  (not version or s.get("Version") == version)]
+    if package_lock is not None:
+        if not version or version != package_lock["version"] or channel != package_lock["channel"]:
+            raise ValueError("Requested runtime differs from the reviewed package lock")
+        pinned = {"Package": PACKAGE, "Architecture": ARCH, "Version": version,
+                  "Filename": package_lock["filename"], "SHA256": package_lock["sha256"],
+                  "Size": str(package_lock["size"])}
+        # A new index must never silently replace a same-version pinned binary.
+        for candidate in candidates:
+            if any(candidate.get(k) != pinned[k] for k in ("Filename", "SHA256", "Size")):
+                raise ValueError("Signed index package identity differs from reviewed lock")
+        return pinned, not bool(candidates)
+    if not candidates:
+        raise ValueError(f"{PACKAGE} {version or ''} not found in hermes-{channel}")
+    return (candidates[0] if len(candidates) == 1 else newest(candidates)), False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--channel", default="stable", choices=["stable", "canary"])
     ap.add_argument("--version", default="", help="exact Debian version to pin (default: newest)")
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--package-lock", type=Path, help="reviewed immutable package identity, including archived pool fallback")
     args = ap.parse_args()
+    package_lock = load_package_lock(args.package_lock) if args.package_lock else None
 
     suite = f"hermes-{args.channel}"
     repo = f"{BASE}/{args.channel}"
@@ -171,12 +215,9 @@ def main() -> int:
     text_bytes = gzip.decompress(raw) if index.endswith(".gz") else raw
     log("Packages index hash OK")
 
-    stanzas = [s for s in parse_packages(text_bytes.decode("utf-8")) if s.get("Package") == PACKAGE]
-    if args.version:
-        stanzas = [s for s in stanzas if s.get("Version") == args.version]
-    if not stanzas:
-        raise SystemExit(f"{PACKAGE} {args.version or ''} not found in {suite}")
-    pkg = newest(stanzas)
+    pkg, archived = select_package(parse_packages(text_bytes.decode("utf-8")), args.version, args.channel, package_lock)
+    if archived:
+        log("Current signed index rotated out this version; using reviewed SHA-256 lock from the same official pool")
     log(f"selected {PACKAGE} {pkg['Version']} ({pkg['Filename']})")
 
     deb = out / Path(pkg["Filename"]).name
@@ -188,6 +229,10 @@ def main() -> int:
 
     root = out / "root"
     subprocess.run(["dpkg-deb", "-x", str(deb), str(root)], check=True)
+    if package_lock:
+        stamp = root / "data/data/com.termux/files/usr/lib/hermes-agent/app/install-stamp.json"
+        if json.loads(stamp.read_text(encoding="utf-8")).get("commit") != package_lock["source_commit"]:
+            raise ValueError("Extracted runtime commit differs from reviewed package lock")
     meta = {"channel": args.channel, "version": pkg["Version"], "filename": pkg["Filename"],
             "sha256": got, "size": int(pkg["Size"])}
     (out / "meta.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
