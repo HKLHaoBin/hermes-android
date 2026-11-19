@@ -90,3 +90,62 @@ try:
 finally:
     post('terminal/close', params)
 print('TERMINAL_OK')
+
+# Exercise the actual authenticated multipart route and saved bytes, not a
+# mocked receipt. The test ZIP is generated here; no user conversations/keys.
+import hashlib
+import io
+import zipfile
+
+
+def import_file(name, data, auth=True, token=True):
+    boundary = 'HermesAndroidImportSmokeBoundary'
+    chunks = []
+    for field, value in [('session_id', session), ('path', '.'), ('android_import', '1')]:
+        chunks.append((f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n').encode())
+    chunks.append((f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\nContent-Type: application/octet-stream\r\n\r\n').encode())
+    chunks.extend([data, f'\r\n--{boundary}--\r\n'.encode()])
+    headers = {'Content-Type': f'multipart/form-data; boundary={boundary}', 'Origin': root}
+    if auth:
+        headers['Cookie'] = cookie
+    if token:
+        headers['X-Hermes-CSRF-Token'] = csrf
+    with opener.open(Request(root + '/api/workspace/upload', b''.join(chunks), headers), timeout=30) as response:
+        return json.load(response)
+
+
+assert 'id="androidImportButton"' in page and 'static/android_import.js' in page
+with opener.open(Request(root + '/static/android_import.js', headers={'Cookie': cookie}), timeout=10) as response:
+    assert b'androidImportFiles' in response.read()
+archive = io.BytesIO()
+with zipfile.ZipFile(archive, 'w') as output:
+    output.writestr('conversation.json', '{"messages": [{"role": "user", "content": "test fixture"}]}')
+contents = archive.getvalue()
+for auth, token, status in [(False, False, 401), (True, False, 403)]:
+    try:
+        import_file('blocked.zip', contents, auth, token)
+    except HTTPError as error:
+        assert error.code == status, error.code
+    else:
+        raise AssertionError('Untrusted import allowed')
+first = import_file('会话导入.zip', contents)
+second = import_file('会话导入.zip', contents)
+for receipt in [first, second]:
+    assert receipt['verified'] is True and receipt['extracted'] is False
+    assert receipt['size'] == len(contents) and receipt['zip_valid'] is True
+    saved = Path(receipt['path'])
+    assert saved.read_bytes() == contents
+    assert hashlib.sha256(saved.read_bytes()).hexdigest() == receipt['sha256']
+    assert not (saved.parent / 'conversation.json').exists(), 'Import unexpectedly extracted archive'
+assert first['path'] != second['path'], 'Duplicate import overwrote original'
+assert Path(first['path']).read_bytes() == contents
+try:
+    import_file('empty.zip', b'')
+except HTTPError as error:
+    assert error.code == 400, error.code
+else:
+    raise AssertionError('Zero-byte import accepted')
+bad_zip = import_file('invalid.zip', b'not a zip')
+assert bad_zip['verified'] is True and bad_zip['zip_valid'] is False
+assert Path(bad_zip['path']).read_bytes() == b'not a zip'
+print('ANDROID_IMPORT_OK')

@@ -7,13 +7,33 @@ import socket
 import sys
 import tempfile
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from agent.agent_init_session import stand_in_interface
+from agent.prompt_builder import build_environment_hints
 from hermes_state import SessionDB
 from tools.code_kernel import _bind_rpc_socket
 from tools.environments.local import LocalEnvironment
 
 root = Path(sys.argv[1])
+# Exercise the real prompt builder on the bundled interpreter. The container
+# already has an isolated HOME; never write guidance into any user profile.
+with patch.dict(os.environ, {'HERMES_ANDROID_APP': '1'}):
+    android_hints = build_environment_hints()
+    for phrase in (
+        'Android app runtime capabilities', 'directory enumeration', 'os.stat',
+        'open/read', 'does not prove readable bytes', 'does not prove absence',
+        'system file picker', 'URI grant', 'server-received bytes', 'HERMES_HOME',
+        'os.scandir', 'st_mtime', 'stderr', 'exit status',
+        'may support -printf, -mmin and -mtime', "-newermt '-1 hour'",
+        'browser_exec', 'WebView', 'do not retry', 'configured remote', 'CDP',
+        'Do not guess sudo, chmod, Shizuku, pkg/apt installs',
+    ):
+        assert phrase in android_hints, phrase
+with patch.dict(os.environ, {'HERMES_ANDROID_APP': ''}):
+    assert 'Android app runtime capabilities' not in build_environment_hints()
+print('ANDROID_RUNTIME_CAPABILITIES_OK')
+
 # Reuse exactly the shipped helpers, with real state.db handles, no model calls.
 path = root / 'webui/api/streaming.py'
 names = {'_session_db_is_open', '_adopt_session_db_for_cached_agent'}

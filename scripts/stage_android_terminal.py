@@ -59,3 +59,6 @@ if source.count(anchor) != 1:
 source = source.replace(anchor, '        # Bundle paths only; do not inherit server passwords or provider keys.\n'
     '        _SAFE_ENV_KEYS.update({"HERMES_HOME", "PREFIX", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"})\n' + anchor)
 terminal.write_text(source, encoding='utf-8')
+
+from stage_android_import import stage_import
+stage_import(root)

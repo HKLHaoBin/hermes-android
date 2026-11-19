@@ -11,6 +11,13 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
+import android.content.pm.PackageManager
+import android.webkit.MimeTypeMap
+import java.util.concurrent.Executors
 import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
@@ -33,7 +40,22 @@ class MainActivity : Activity() {
     private var loadedStart = 0L
     private lateinit var statusLabel: android.widget.TextView
 
-    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private class PendingFileChooser(
+        val callback: ValueCallback<Array<Uri>>,
+        val port: Int,
+        val startedAt: Long,
+        val multiple: Boolean,
+    ) {
+        val cancellation = CancellationSignal()
+        var timeout: Runnable? = null
+    }
+
+    private var fileChooser: PendingFileChooser? = null
+    private var pickerLaunched = false
+    private var authenticatedPageReady = false
+    private var cookieInstalled = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val fileReader = Executors.newSingleThreadExecutor()
     @Volatile private var sharedText: String = ""
 
     private val runtimeListener: (HermesRuntime.Snapshot) -> Unit = { s ->
@@ -75,6 +97,17 @@ class MainActivity : Activity() {
         }
 
         web.webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+                authenticatedPageReady = false
+                finishFileChooser(null)
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                authenticatedPageReady = cookieInstalled && statusLabel.visibility == android.view.View.GONE &&
+                    AssetServer.isLocal(url?.let(Uri::parse), loadedPort) &&
+                    AssetServer.isLocal(view.url?.let(Uri::parse), loadedPort)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
                 if (AssetServer.isLocal(url, loadedPort)) return false
@@ -89,22 +122,49 @@ class MainActivity : Activity() {
                 callback: ValueCallback<Array<Uri>>,
                 params: FileChooserParams,
             ): Boolean {
-                fileCallback?.onReceiveValue(null)
-                fileCallback = callback
-                val intent = params.createIntent().apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    if (params.mode == FileChooserParams.MODE_OPEN_MULTIPLE) {
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    }
-                }
-                return try {
-                    startActivityForResult(intent, REQUEST_FILES)
-                    true
-                } catch (_: ActivityNotFoundException) {
-                    fileCallback = null
+                // Return true even on rejection: we own and complete this callback once.
+                if (view !== web || !canChooseFiles() || fileChooser != null || pickerLaunched) {
                     callback.onReceiveValue(null)
-                    false
+                    fileChooserError("请等待 Hermes 本地页面就绪，或先完成当前文件选择")
+                    return true
                 }
+                if (params.mode != FileChooserParams.MODE_OPEN &&
+                    params.mode != FileChooserParams.MODE_OPEN_MULTIPLE) {
+                    callback.onReceiveValue(null)
+                    fileChooserError("此文件选择模式暂不支持")
+                    return true
+                }
+                val pending = PendingFileChooser(callback, loadedPort, loadedStart,
+                    params.mode == FileChooserParams.MODE_OPEN_MULTIPLE)
+                fileChooser = pending
+                try {
+                    // Preserve WebView's media/capture route instead of forcing it through SAF.
+                    val chooserIntent = if (params.isCaptureEnabled) params.createIntent() else {
+                        val types = FileChooserMimeTypes.normalize(params.acceptTypes) {
+                            MimeTypeMap.getSingleton().getMimeTypeFromExtension(it)
+                        }
+                        Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = if (types.size == 1) types[0] else "*/*"
+                            if (types.size > 1) putExtra(Intent.EXTRA_MIME_TYPES, types)
+                        }
+                    }
+                    chooserIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    chooserIntent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, pending.multiple)
+                    try {
+                        startActivityForResult(chooserIntent, REQUEST_FILES)
+                    } catch (missing: ActivityNotFoundException) {
+                        if (chooserIntent.action != Intent.ACTION_OPEN_DOCUMENT) throw missing
+                        // Some vendor ROMs omit DocumentsUI but still provide GET_CONTENT.
+                        chooserIntent.action = Intent.ACTION_GET_CONTENT
+                        startActivityForResult(chooserIntent, REQUEST_FILES)
+                    }
+                    pickerLaunched = true
+                } catch (_: RuntimeException) {
+                    finishFileChooser(null)
+                    fileChooserError("无法打开系统文件选择器，请检查是否已启用“文件”应用")
+                }
+                return true
             }
 
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
@@ -125,8 +185,11 @@ class MainActivity : Activity() {
     }
 
     private fun renderRuntime(s: HermesRuntime.Snapshot) {
+        if (s.port != loadedPort || s.startedAt != loadedStart ||
+            s.phase != HermesRuntime.Phase.RUNNING || s.webCookie.isEmpty()) cookieInstalled = false
         if (s.phase != HermesRuntime.Phase.RUNNING || s.webCookie.isEmpty()) {
-
+            authenticatedPageReady = false
+            finishFileChooser(null)
             if (loadedPort != 0) web.loadUrl("about:blank")
             loadedPort = 0
             loadedStart = 0L
@@ -136,6 +199,8 @@ class MainActivity : Activity() {
             return
         }
         if (loadedPort == s.port && loadedStart == s.startedAt) return
+        authenticatedPageReady = false
+        finishFileChooser(null)
         loadedPort = s.port
         loadedStart = s.startedAt
         val origin = "http://127.0.0.1:${s.port}/"
@@ -145,6 +210,7 @@ class MainActivity : Activity() {
                 statusLabel.text = "无法建立 Hermes 本地会话，请重开应用。"
                 return@setCookie
             }
+            cookieInstalled = true
             statusLabel.visibility = android.view.View.GONE
             web.visibility = android.view.View.VISIBLE
 
@@ -179,22 +245,110 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun canChooseFiles(): Boolean {
+        val runtime = HermesRuntime.snapshot
+        return !isFinishing && !isDestroyed && cookieInstalled && authenticatedPageReady &&
+            runtime.phase == HermesRuntime.Phase.RUNNING && runtime.webCookie.isNotEmpty() &&
+            runtime.port == loadedPort && runtime.startedAt == loadedStart &&
+            AssetServer.isLocal(web.url?.let(Uri::parse), loadedPort)
+    }
+
+    private fun fileChooserError(message: String) {
+        // Never log selected names, URIs, provider exceptions, or authentication data.
+        Log.w("HermesFiles", message)
+        if (!isFinishing && !isDestroyed) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+    }
+
+    private fun finishFileChooser(uris: Array<Uri>?) {
+        val pending = fileChooser ?: return
+        fileChooser = null
+        pending.timeout?.let(mainHandler::removeCallbacks)
+        pending.cancellation.cancel()
+        pending.callback.onReceiveValue(uris)
+    }
+
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode == REQUEST_FILES) {
-            val callback = fileCallback
-            fileCallback = null
-            if (callback == null) return
-            var result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-            val clip = data?.clipData
-            if (resultCode == RESULT_OK && clip != null && clip.itemCount > 1) {
-                result = Array(clip.itemCount) { clip.getItemAt(it).uri }
-            }
-            callback.onReceiveValue(result)
+        if (requestCode != REQUEST_FILES) {
+            @Suppress("DEPRECATION")
+            super.onActivityResult(requestCode, resultCode, data)
             return
         }
-        @Suppress("DEPRECATION")
-        super.onActivityResult(requestCode, resultCode, data)
+        pickerLaunched = false
+        val pending = fileChooser ?: return
+        if (resultCode != RESULT_OK || !canChooseFiles() || pending.port != loadedPort ||
+            pending.startedAt != loadedStart) {
+            finishFileChooser(null)
+            return
+        }
+        try {
+            val uris = linkedSetOf<Uri>()
+            data?.data?.let(uris::add)
+            data?.clipData?.let { clip ->
+                for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri)
+            }
+            if (uris.isEmpty() || (!pending.multiple && uris.size != 1)) {
+                finishFileChooser(null)
+                fileChooserError("未收到有效文件，请重新选择")
+                return
+            }
+            val selected = uris.toTypedArray()
+            val timeout = Runnable {
+                if (fileChooser === pending) {
+                    finishFileChooser(null)
+                    fileChooserError("读取文件超时；云端文件请先下载到本机后重试")
+                }
+            }
+            pending.timeout = timeout
+            mainHandler.postDelayed(timeout, 60_000L)
+            fileReader.execute {
+                val readable = try {
+                    selected.forEach { uri ->
+                        require(uri.scheme == "content" && !uri.authority.isNullOrBlank())
+                        val provider = packageManager.resolveContentProvider(uri.authority!!, 0)
+                        require(provider != null && provider.applicationInfo.uid != applicationInfo.uid)
+                        require(checkUriPermission(uri, Process.myPid(), Process.myUid(),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION) == PackageManager.PERMISSION_GRANTED)
+                        pending.cancellation.throwIfCanceled()
+                        // Probe actual bytes off the UI thread, including cloud hydration.
+                        val descriptor = contentResolver.openAssetFileDescriptor(uri, "r", pending.cancellation)
+                            ?: throw java.io.IOException("Missing document stream")
+                        descriptor.use { asset ->
+                            asset.createInputStream().use { stream ->
+                                pending.cancellation.setOnCancelListener {
+                                    try { stream.close() } catch (_: java.io.IOException) { }
+                                }
+                                try {
+                                    pending.cancellation.throwIfCanceled()
+                                    stream.read()
+                                } finally {
+                                    pending.cancellation.setOnCancelListener(null)
+                                }
+                            }
+                        }
+                    }
+                    true
+                } catch (_: Exception) {
+                    false
+                }
+                mainHandler.post {
+                    if (fileChooser === pending) {
+                        if (readable && canChooseFiles() && pending.port == loadedPort &&
+                            pending.startedAt == loadedStart) {
+                            // Activity read grants last through WebView's upload. Do not
+                            // persist grants or copy here; the upload endpoint owns the copy.
+                            finishFileChooser(selected)
+                        } else {
+                            finishFileChooser(null)
+                            fileChooserError("无法读取所选文件；请从系统“文件”重新选择，云端文件可先下载到本机")
+                        }
+                    }
+                }
+            }
+        } catch (_: RuntimeException) {
+            finishFileChooser(null)
+            fileChooserError("文件选择结果无效，请重新选择")
+        }
     }
 
     override fun onResume() {
@@ -210,6 +364,10 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         HermesRuntime.removeListener(runtimeListener)
+        authenticatedPageReady = false
+        finishFileChooser(null)
+        mainHandler.removeCallbacksAndMessages(null)
+        fileReader.shutdownNow()
         web.destroy()
         super.onDestroy()
     }

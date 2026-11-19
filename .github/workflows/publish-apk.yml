@@ -59,7 +59,6 @@ jobs:
             gh release upload "$TAG" Hermes-Android.apk Hermes-Android.apk.sha256 release-cert.sha256 --clobber
           fi
           [[ $(gh release view "$TAG" --json assets --jq '.assets[] | select(.name=="Hermes-Android.apk" and .state=="uploaded") | .digest') == "sha256:$digest" ]]
-          if gh release view "$TAG" --json assets --jq '.assets[].name' | grep -qx 'hermes-android-0.23.2.canary.20261118T064620Z-1-9.apk.sha256'; then
-            gh release delete-asset "$TAG" 'hermes-android-0.23.2.canary.20261118T064620Z-1-9.apk.sha256' --yes
-          fi
-          gh release edit "$TAG" --draft=false --latest --notes $'首个公开版本。\n\n- 内置 Hermes Agent 和 Hermes WebUI，支持流式聊天、Markdown 和内置终端。\n- 修复 Android 上的 RPC socket、终端退出码和会话持久化问题。\n- 使用 Hermes 版画少女作为启动图标。\n- 支持 arm64-v8a，最低 Android 7.0；已通过 Android 容器回归测试。\n- APK 使用项目长期签名；附 APK SHA-256 与签名证书指纹。\n\n独立社区移植版，非 Nous Research 官方 Android 发行版。'
+          gh api "repos/$GH_REPO/contents/RELEASE_NOTES.md?ref=$sha" --jq .content | base64 -d > release-notes.md
+          test -s release-notes.md
+          gh release edit "$TAG" --draft=false --latest --notes-file release-notes.md

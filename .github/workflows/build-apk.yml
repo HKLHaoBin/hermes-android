@@ -43,6 +43,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: File chooser MIME policy regressions
+        run: |
+          mkdir -p build/native-policy
+          javac --release 17 -Xlint:all -d build/native-policy android/app/src/main/java/io/github/hermesandroid/FileChooserMimeTypes.java android/native-tests/FileChooserMimeTypesTest.java
+          java -cp build/native-policy io.github.hermesandroid.FileChooserMimeTypesTest
+
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.11.1'
@@ -108,6 +114,9 @@ jobs:
           python3 scripts/stage_android_terminal.py build/webui
           git -C webui-source rev-parse HEAD > build/webui/ANDROID_WEBUI_REVISION
 
+      - name: Android import frontend regressions with pinned API helper
+        run: HERMES_WEBUI_SOURCE=build/webui node --test scripts/test_android_import.js
+
       - name: Relocate runtime for the app
         run: |
           scripts/ci_run.sh relocate python3 scripts/relocate_payload.py \
@@ -127,7 +136,7 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           HERMES_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           HERMES_ANDROID_VERSION_CODE: ${{ github.run_number }}
-          HERMES_ANDROID_VERSION_NAME: ${{ steps.upstream.outputs.version }}
+          HERMES_ANDROID_VERSION_NAME: '0.1.1'
         run: |
           if [[ -z "$KEYSTORE_B64" || -z "$HERMES_ANDROID_KEYSTORE_PASSWORD" ]]; then
             echo '::error::Persistent release signing secrets are required. No debug fallback.'
@@ -230,5 +239,7 @@ jobs:
             -v "$PWD/sim:$FINAL" --entrypoint /system/bin/sh "$IMAGE" "$FINAL/smoke.sh"
           test "$(grep -c SMOKE_OK build/logs/smoke.log)" = 2
           test "$(grep -c TERMINAL_OK build/logs/smoke.log)" = 2
+          test "$(grep -c ANDROID_IMPORT_OK build/logs/smoke.log)" = 2
           test "$(grep -c ANDROID_RUNTIME_FIXES_OK build/logs/smoke.log)" = 2
+          test "$(grep -c ANDROID_RUNTIME_CAPABILITIES_OK build/logs/smoke.log)" = 2
           echo "::notice title=smoke output::$(tail -n 70 build/logs/smoke.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"

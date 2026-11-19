@@ -1,5 +1,6 @@
 # Hermes Android runtime this repo builds against by default (shell syntax).
-# Leave the version empty so CI resolves the current canary package when older
-# pinned snapshots have rotated out of the upstream repository.
+# Exact source generation used by the Android compatibility patches and tests.
+# If upstream rotates this package out, fail closed and review a new source
+# generation rather than silently packaging different runtime behavior.
 HERMES_RUNTIME_CHANNEL=canary
-HERMES_RUNTIME_VERSION=
+HERMES_RUNTIME_VERSION='0.23.2~canary.20261118T064620Z-1'
