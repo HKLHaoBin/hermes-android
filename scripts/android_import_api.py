@@ -1,6 +1,7 @@
 """Byte-level import receipt; no archive extraction and no URI-to-path guessing."""
 import hashlib
 import io
+import mimetypes
 import os
 import zipfile
 
@@ -18,6 +19,7 @@ def verified_import_receipt(workspace, dest, expected):
     sha256 = digest.hexdigest()
     if size != len(expected) or sha256 != hashlib.sha256(expected).hexdigest():
         raise ValueError('导入后校验不一致，请重新选择文件。')
+    mime = mimetypes.guess_type(dest.name)[0] or 'application/octet-stream'
     receipt = {
         'filename': dest.name,
         'path': str(dest),
@@ -25,7 +27,8 @@ def verified_import_receipt(workspace, dest, expected):
         'sha256': sha256,
         'verified': True,
         'extracted': False,
-        'is_image': False,
+        'is_image': mime.startswith('image/'),
+        'mime': mime,
     }
     if dest.suffix.lower() == '.zip':
         # Only structural validation, not decompression of untrusted archives.

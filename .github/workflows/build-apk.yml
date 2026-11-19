@@ -115,7 +115,7 @@ jobs:
           git -C webui-source rev-parse HEAD > build/webui/ANDROID_WEBUI_REVISION
 
       - name: Android import frontend regressions with pinned API helper
-        run: HERMES_WEBUI_SOURCE=build/webui node --test scripts/test_android_import.js
+        run: HERMES_WEBUI_SOURCE=build/webui node --test scripts/test_android_import.js scripts/test_android_import_chat.js
 
       - name: Relocate runtime for the app
         run: |
@@ -136,7 +136,7 @@ jobs:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           HERMES_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           HERMES_ANDROID_VERSION_CODE: ${{ github.run_number }}
-          HERMES_ANDROID_VERSION_NAME: '0.1.1'
+          HERMES_ANDROID_VERSION_NAME: '0.1.2'
         run: |
           if [[ -z "$KEYSTORE_B64" || -z "$HERMES_ANDROID_KEYSTORE_PASSWORD" ]]; then
             echo '::error::Persistent release signing secrets are required. No debug fallback.'
@@ -240,6 +240,7 @@ jobs:
           test "$(grep -c SMOKE_OK build/logs/smoke.log)" = 2
           test "$(grep -c TERMINAL_OK build/logs/smoke.log)" = 2
           test "$(grep -c ANDROID_IMPORT_OK build/logs/smoke.log)" = 2
+          test "$(grep -c ANDROID_IMPORT_IMAGE_OK build/logs/smoke.log)" = 2
           test "$(grep -c ANDROID_RUNTIME_FIXES_OK build/logs/smoke.log)" = 2
           test "$(grep -c ANDROID_RUNTIME_CAPABILITIES_OK build/logs/smoke.log)" = 2
           echo "::notice title=smoke output::$(tail -n 70 build/logs/smoke.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"

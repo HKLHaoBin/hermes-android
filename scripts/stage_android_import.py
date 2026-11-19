@@ -14,21 +14,18 @@ def stage_import(root):
     root = Path(root)
     here = Path(__file__).resolve().parent
     shutil.copyfile(here / 'android_import.js', root / 'static/android_import.js')
+    shutil.copyfile(here / 'android_import_chat.js', root / 'static/android_import_chat.js')
     shutil.copyfile(here / 'android_import_api.py', root / 'api/android_import.py')
     index = root / 'static/index.html'
-    replace_once(index,
-        '            <button type="button" class="icon-btn has-tooltip" id="androidComposerTerminal"',
-        '''            <button type="button" class="sm-btn" id="androidImportButton" title="通过系统文件选择器导入；无需所有文件权限" onclick="androidChooseImport()" aria-label="导入文件">导入文件</button>
-            <button type="button" class="icon-btn has-tooltip" id="androidComposerTerminal"''')
     replace_once(index,
         '        <div class="attach-tray" id="attachTray"></div>',
         '''        <div id="androidImportStatus" role="status" aria-live="polite" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:140px;overflow:auto;font-size:12px;padding:0 10px"></div>
         <input type="file" id="androidImportInput" class="file-input-visually-hidden" multiple accept="*/*">
-        <div class="attach-tray" id="attachTray"></div>
-        <div id="androidAttachmentHint" role="status" aria-live="polite" style="font-size:12px;padding:0 10px"></div>''')
+        <div class="attach-tray" id="attachTray"></div>''')
     replace_once(index,
         '<script src="static/outline.js?v=__WEBUI_VERSION__" defer></script>',
         '<script src="static/outline.js?v=__WEBUI_VERSION__" defer></script>\n'
+        '<script src="static/android_import_chat.js?v=__WEBUI_VERSION__" defer></script>\n'
         '<script src="static/android_import.js?v=__WEBUI_VERSION__" defer></script>')
     upload = root / 'api/upload.py'
     replace_once(upload,

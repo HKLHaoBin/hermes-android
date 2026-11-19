@@ -114,7 +114,9 @@ def import_file(name, data, auth=True, token=True):
         return json.load(response)
 
 
-assert 'id="androidImportButton"' in page and 'static/android_import.js' in page
+assert page.count('id="btnAttach"') == 1 and 'static/android_import.js' in page
+assert 'id="androidImportButton"' not in page, 'Duplicate import button still present'
+assert 'id="androidAttachmentHint"' not in page, 'Obsolete pending-send hint still present'
 with opener.open(Request(root + '/static/android_import.js', headers={'Cookie': cookie}), timeout=10) as response:
     assert b'androidImportFiles' in response.read()
 archive = io.BytesIO()
@@ -148,4 +150,30 @@ else:
 bad_zip = import_file('invalid.zip', b'not a zip')
 assert bad_zip['verified'] is True and bad_zip['zip_valid'] is False
 assert Path(bad_zip['path']).read_bytes() == b'not a zip'
+
+# Use a real tiny PNG and the shipped native multimodal consumer. This is
+# import-to-image-content coverage without a billed model request.
+import base64
+import struct
+import zlib
+
+
+def png_chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+
+
+png = b'\x89PNG\r\n\x1a\n' + png_chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
+png += png_chunk(b'IDAT', zlib.compress(b'\x00\xff\x00\x00')) + png_chunk(b'IEND', b'')
+image = import_file('导入图片.png', png)
+assert image['verified'] is True and image['is_image'] is True and image['mime'] == 'image/png'
+assert Path(image['path']).read_bytes() == png
+runtime = Path(sys.argv[2])
+sys.path.insert(0, str(runtime / 'webui'))
+from api.streaming import _build_native_multimodal_message
+parts = _build_native_multimodal_message('', 'Describe the imported image', [image], str(Path(image['path']).parent))
+assert isinstance(parts, list), 'Imported image was reduced to a text-only path'
+urls = [p['image_url']['url'] for p in parts if p.get('type') == 'image_url']
+assert len(urls) == 1 and urls[0].startswith('data:image/png;base64,')
+assert base64.b64decode(urls[0].split(',', 1)[1]) == png
+print('ANDROID_IMPORT_IMAGE_OK')
 print('ANDROID_IMPORT_OK')

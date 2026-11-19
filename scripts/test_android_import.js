@@ -6,8 +6,10 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 function fixture() {
-  const elements = Object.fromEntries(['androidImportStatus', 'androidImportInput', 'androidImportButton', 'msg', 'composerBox', 'attachTray', 'androidAttachmentHint'].map(id => [id, {
-    textContent: '', value: '', disabled: false, files: [], click() { this.clicked = true; }, dispatchEvent() { this.inputEvents = (this.inputEvents || 0) + 1; },
+  const elements = Object.fromEntries(['androidImportStatus', 'androidImportInput', 'btnAttach', 'msg', 'composerBox', 'attachTray'].map(id => [id, {
+    textContent: '', value: '', disabled: false, files: [], attributes: {},
+    setAttribute(k, v) { this.attributes[k] = v; }, removeAttribute(k) { delete this.attributes[k]; },
+    click() { this.clicked = true; }, dispatchEvent() { this.inputEvents = (this.inputEvents || 0) + 1; },
   }]));
   const observers = [];
   const calls = [];
@@ -32,7 +34,15 @@ function fixture() {
 
 test('selecting a file uploads immediately, preserving ZIP and attaching verified path to composer without sending', async () => {
   const {ctx, elements, calls} = fixture();
-  ctx.androidChooseImport();
+  assert.equal(typeof elements.btnAttach.onclick, 'function');
+  elements.btnAttach.onclick({preventDefault() {}, stopPropagation() {}});
+  assert.equal(elements.btnAttach.attributes['aria-label'], '导入文件');
+  assert.equal(elements.androidImportButton, undefined);
+  for (const name of ['aria-haspopup', 'aria-controls', 'aria-expanded']) elements.btnAttach.setAttribute(name, 'stale-menu');
+  ctx._syncAttachChoiceSemantics();
+  assert.equal(elements.btnAttach.attributes['aria-haspopup'], undefined);
+  assert.equal(elements.btnAttach.attributes['aria-controls'], undefined);
+  assert.equal(elements.btnAttach.attributes['aria-expanded'], undefined);
   const input = elements.androidImportInput;
   assert.equal(input.clicked, true);
   input.files = [{name: '微信-会话.zip', size: 2312389}];
@@ -44,7 +54,7 @@ test('selecting a file uploads immediately, preserving ZIP and attaching verifie
   assert.match(elements.msg.value, /尚未导入其中的会话/);
   assert.match(elements.msg.value, /微信-会话.zip/);
   assert.equal(elements.msg.inputEvents, 1);
-  assert.equal(elements.androidImportButton.disabled, false);
+  assert.equal(elements.btnAttach.disabled, false);
 });
 
 test('no active session does not open the chooser', () => {
@@ -73,7 +83,7 @@ test('missing verification receipt, size mismatch and network failure are visibl
     await ctx.androidImportFiles([{name: 'a.zip', size: 1}], 'owner');
     assert.match(elements.androidImportStatus.textContent, /导入失败/);
     assert.equal(elements.msg.value, '');
-    assert.equal(elements.androidImportButton.disabled, false);
+    assert.equal(elements.btnAttach.disabled, false);
   }
 });
 
@@ -122,15 +132,69 @@ test('non-idempotent import never retries after a saved request loses its respon
   assert.equal(elements.msg.value, '');
 });
 
-test('partial batch failure does not hide the successful file and pending attachment hint is explicit', async () => {
-  const {ctx, elements, observers} = fixture();
+test('partial batch failure does not hide successful files', async () => {
+  const {ctx, elements} = fixture();
   await ctx.androidImportFiles([{name: 'empty.zip', size: 0}, {name: 'ok.txt', size: 1}], 'owner');
   assert.match(elements.androidImportStatus.textContent, /导入失败：empty.zip/);
   assert.match(elements.androidImportStatus.textContent, /已导入并读回校验：ok.txt/);
-  ctx.S.pendingFiles = [{name: 'pending.zip'}];
-  observers[1]();
-  assert.match(elements.androidAttachmentHint.textContent, /尚未发送/);
-  ctx.S.pendingFiles = [];
-  observers[1]();
-  assert.equal(elements.androidAttachmentHint.textContent, '');
+});
+
+test('paste and drop addFiles use the same immediate import, not pending-send attachments', async () => {
+  const {ctx, elements, calls} = fixture();
+  assert.equal(typeof ctx.addFiles, 'function');
+  await ctx.addFiles([{name: 'pasted.png', size: 12}]);
+  assert.equal(calls.filter(c => c[0] === '/api/workspace/upload').length, 1);
+  assert.equal(ctx.S.pendingFiles.length, 0);
+  assert.match(elements.msg.value, /pasted.png/);
+});
+
+test('new imports preserve existing pending drafts without appending more pending files', async () => {
+  const {ctx} = fixture();
+  const oldDraft = {name: 'legacy-draft.txt', size: 5};
+  ctx.S.pendingFiles.push(oldDraft);
+  await ctx.addFiles([{name: 'new.txt', size: 6}]);
+  assert.equal(ctx.S.pendingFiles.length, 1);
+  assert.equal(ctx.S.pendingFiles[0], oldDraft);
+});
+
+test('paste during an active import is visibly rejected without silently queueing another upload', async () => {
+  const {ctx, calls} = fixture();
+  let resolve;
+  ctx.api = () => new Promise(r => { resolve = r; });
+  const importing = ctx.addFiles([{name: 'first.txt', size: 4}]);
+  await ctx.addFiles([{name: 'second.txt', size: 4}]);
+  assert.ok(calls.some(c => c[0] === 'toast' && /完成后重新选择/.test(c[1])));
+  assert.equal(ctx.S.pendingFiles.length, 0);
+  resolve({verified: true, size: 4, path: '/first.txt', filename: 'first.txt', sha256: 'a'.repeat(64)});
+  await importing;
+});
+
+test('profile switch during upload keeps image metadata with original owner and hides foreign receipt', async () => {
+  const {ctx, elements, observers} = fixture();
+  ctx.S.activeProfile = 'original';
+  let resolve;
+  const remembered = [];
+  ctx.androidRememberImportedAttachment = (...args) => { remembered.push(args); return true; };
+  ctx.api = () => new Promise(r => { resolve = r; });
+  const pending = ctx.androidImportFiles([{name: 'private.png', size: 4}], 'owner');
+  ctx.S.activeProfile = 'different';
+  observers[0]();
+  resolve({verified: true, size: 4, path: '/original/private.png', filename: 'private.png', sha256: 'a'.repeat(64), is_image: true, mime: 'image/png'});
+  await pending;
+  assert.equal(remembered[0][1], 'original');
+  assert.equal(elements.msg.value, '');
+  assert.equal(elements.androidImportStatus.textContent, '');
+  ctx.S.activeProfile = 'original';
+  observers[0]();
+  assert.match(elements.androidImportStatus.textContent, /已导入并读回校验/);
+});
+
+test('changing owner while system picker is open does not upload into a different profile', async () => {
+  const {ctx, elements, calls} = fixture();
+  ctx.androidChooseImport();
+  elements.androidImportInput.files = [{name: 'selected.png', size: 4}];
+  ctx.S.activeProfile = 'different';
+  await elements.androidImportInput.onchange();
+  assert.equal(calls.filter(c => c[0] === '/api/workspace/upload').length, 0);
+  assert.ok(calls.some(c => c[0] === 'toast' && /已切换/.test(c[1])));
 });
