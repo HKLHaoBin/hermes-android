@@ -52,6 +52,12 @@ jobs:
           javac --release 17 -Xlint:all -d build/native-policy android/app/src/main/java/io/github/hermesandroid/FileChooserMimeTypes.java android/native-tests/FileChooserMimeTypesTest.java
           java -cp build/native-policy io.github.hermesandroid.FileChooserMimeTypesTest
 
+      - name: Job ledger contract regressions
+        run: python3 scripts/test_job_ledger_contract.py
+
+      - name: Job ledger source contract regressions
+        run: python3 scripts/test_job_ledger_source.py
+
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: '8.11.1'
