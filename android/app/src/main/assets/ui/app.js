@@ -1229,6 +1229,36 @@
     }
   }
 
+  const capabilityLabels = {
+    webui: '本地 WebUI', runtime: 'Hermes runtime', cli_tui: 'CLI/TUI', terminal: '嵌入式终端',
+    skills: 'Skills', plugins: 'Plugins', mcp: 'MCP', browser: '浏览器自动化',
+    computer_use: 'Computer Use', background_service: '后台服务', job_queue: '持久化任务队列',
+    backup_restore: '备份与恢复', real_device_validation: '真机验收',
+  };
+  const capabilityStates = { supported: '可用', partial: '部分可用', experimental: '实验性', unavailable: '不可用' };
+
+  function renderCapabilities(items) {
+    const root = $('#capabilities');
+    if (!root) return;
+    root.textContent = '';
+    if (!Array.isArray(items) || !items.length) {
+      root.appendChild(el('div', 'muted', '暂无能力声明'));
+      return;
+    }
+    items.forEach(item => {
+      const state = ['supported', 'partial', 'experimental', 'unavailable'].includes(item.state) ? item.state : 'unavailable';
+      const row = el('div', 'cap-row ' + state);
+      row.appendChild(el('span', 'cap-dot'));
+      const body = el('div');
+      const name = el('div', 'cap-name', capabilityLabels[item.id] || item.id || '未命名能力');
+      name.appendChild(el('span', 'cap-state', capabilityStates[state]));
+      body.appendChild(name);
+      if (item.reason) body.appendChild(el('div', 'cap-reason', item.reason));
+      row.appendChild(body);
+      root.appendChild(row);
+    });
+  }
+
   function renderStatusPage() {
     $('#st-phase').textContent = phaseLabel(status.phase);
     const dot = $('#st-dot');
@@ -1241,7 +1271,10 @@
     $('#st-pid').textContent = status.pid ? String(status.pid) : '—';
     $('#st-payload').textContent = status.payloadId || '—';
     $('#st-app').textContent = status.appVersion || '—';
+    $('#st-api').textContent = status.androidApi || '—';
+    $('#st-abi').textContent = status.abi || '—';
     $('#st-device').textContent = bridge ? bridge.deviceInfo() : navigator.userAgent;
+    renderCapabilities(status.capabilities || []);
     const running = status.phase === 'running' || status.phase === 'starting' || status.phase === 'installing';
     $('#btn-start').disabled = running;
     $('#btn-stop').disabled = !running;
