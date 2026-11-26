@@ -20,6 +20,10 @@ object HermesRuntime {
         val pid: Int = 0,
         val startedAt: Long = 0L,
         val payloadId: String = "",
+        val runtimeJobId: String = "",
+        val runtimeJobState: String = "",
+        val agentJobs: Int = 0,
+        val appVisible: Boolean = false,
         val exitCode: Int? = null,
     )
 
@@ -80,6 +84,10 @@ object HermesRuntime {
             put("pid", s.pid)
             put("startedAt", s.startedAt)
             put("payloadId", s.payloadId)
+            put("runtimeJobId", s.runtimeJobId)
+            put("runtimeJobState", s.runtimeJobState)
+            put("agentJobs", s.agentJobs)
+            put("appVisible", s.appVisible)
             put("exitCode", s.exitCode ?: JSONObject.NULL)
             put("appVersion", BuildConfig.VERSION_NAME)
             if (includeToken) put("token", s.token)

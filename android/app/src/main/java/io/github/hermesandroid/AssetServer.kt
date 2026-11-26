@@ -31,6 +31,11 @@ object AssetServer {
                 val n = uri.getQueryParameter("n")?.toIntOrNull()?.coerceIn(1, 2000) ?: 400
                 json(HermesRuntime.logJson(n).toString())
             }
+            "jobs.json" -> {
+                val profile = uri.getQueryParameter("profile") ?: AgentJobCoordinator.AGENT_PROFILE
+                json(AgentJobCoordinator.jobsJson(profile))
+            }
+            "job-diagnostics.json" -> json(AgentJobCoordinator.jobDiagnosticsJson())
             else -> asset(context, rel)
         }
     }

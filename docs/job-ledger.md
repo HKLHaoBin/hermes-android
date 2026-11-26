@@ -15,20 +15,22 @@
 | `state` | enum | `queued`、`running`、`paused`、`succeeded`、`failed`、`cancelled` |
 | `created_at` | integer | Unix milliseconds |
 | `updated_at` | integer | 不早于 `created_at` |
-| `started_at` | integer/null | 首次进入 `running` 时写入；重试后保留原值 |
+| `started_at` | integer/null | 首次进入 `running` 时写入；重试后保留原值；启动前失败时可以为 null |
 | `finished_at` | integer/null | 终态时写入 |
 | `retry_count` | integer | 从 0 开始，只能递增；最多允许 3 次恢复重试 |
 | `last_error` | string/null | 脱敏后的短错误类别，不保存原始异常、凭据或完整用户输入 |
 | `runtime_id` | string/null | 运行时 payload ID |
 | `session_id` | string/null | Hermes 会话引用 |
 | `notification_id` | string/null | Android 通知或恢复入口引用 |
+| `worker_id` | string/null | 当前持有执行 lease 的 Android worker |
+| `heartbeat_at` | integer/null | 最近一次 worker heartbeat 的 Unix milliseconds |
 
 ## State transitions
 
 允许的状态转移：
 
 ```text
-queued   -> running | cancelled
+queued   -> running | paused | failed | cancelled
 running  -> paused | succeeded | failed | cancelled
 paused   -> queued | running | failed | cancelled
 failed   -> queued | cancelled
@@ -52,8 +54,9 @@ cancelled -> (终态)
 ## Storage contract
 
 - 建议使用 SQLite，数据库位于应用私有目录。
-- schema 必须带版本号，并使用事务执行状态转移。
+- schema 必须带版本号，并使用事务执行状态转移；当前 schema version 为 `2`。
 - 状态转移条件必须包含调用方持有的旧状态和 `updated_at` revision token；不能在 `transition` 内重新读取同状态记录后把较新 attempt 当成旧 worker 的目标。
+- running job 的 worker lease 必须通过 `worker_id` 和 `heartbeat_at` 刷新；旧 worker 不能刷新新 attempt。
 - 数据库写入失败不能伪造成功通知；通知失败也不能回滚已经提交的任务状态。
 - 日志和导出中不得包含 token、API key、Cookie、Authorization header 或完整用户输入。
 
@@ -64,6 +67,7 @@ cancelled -> (终态)
 3. 为非法转移、幂等创建、profile 隔离、并发旧状态保护增加测试。
 4. 先接入 Hermes runtime 生命周期，再接入真正的 Agent job。
 5. 在诊断页显示 ledger 中的任务数量和最近失败原因。
+6. 在同一 Job Ledger 数据库中持久化 one-shot/periodic schedule，不把 prompt 写入 ledger。
 
 ## Acceptance tests
 
@@ -73,3 +77,4 @@ cancelled -> (终态)
 - 不同 profile 之间无法读取或修改对方任务。
 - 旧状态转移竞争时，较晚写入不能覆盖已发生的合法新状态；恢复后新 attempt 的 revision 必须拒绝旧 worker 的完成/失败写入。
 - 数据库升级后已有任务和终态记录仍可读取。
+- schedule 到期后只产生一个对应 job attempt；重复 alarm 不得产生重复 worker。

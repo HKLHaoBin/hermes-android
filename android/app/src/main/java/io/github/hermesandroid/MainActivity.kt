@@ -1,5 +1,6 @@
 package io.github.hermesandroid
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.ActivityNotFoundException
@@ -57,6 +58,7 @@ class MainActivity : Activity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val fileReader = Executors.newSingleThreadExecutor()
     @Volatile private var sharedText: String = ""
+    private var pendingAgentJobId: String? = null
 
     private val runtimeListener: (HermesRuntime.Snapshot) -> Unit = { s ->
         runOnUiThread {
@@ -67,6 +69,7 @@ class MainActivity : Activity() {
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AgentJobCoordinator.initialize(this)
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
 
         web = WebView(this)
@@ -80,6 +83,7 @@ class MainActivity : Activity() {
             addView(web, -1, -1)
             addView(statusLabel, -1, -1)
         })
+        requestNotificationPermission()
 
         with(web.settings) {
             javaScriptEnabled = true
@@ -106,6 +110,10 @@ class MainActivity : Activity() {
                 authenticatedPageReady = cookieInstalled && statusLabel.visibility == android.view.View.GONE &&
                     AssetServer.isLocal(url?.let(Uri::parse), loadedPort) &&
                     AssetServer.isLocal(view.url?.let(Uri::parse), loadedPort)
+                if (authenticatedPageReady) pendingAgentJobId?.let { jobId ->
+                    pendingAgentJobId = null
+                    view.postDelayed({ dispatchAgentJob(jobId) }, 100L)
+                }
             }
 
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -184,6 +192,16 @@ class MainActivity : Activity() {
         renderRuntime(HermesRuntime.snapshot)
     }
 
+    override fun onStart() {
+        super.onStart()
+        HermesRuntime.update { it.copy(appVisible = true) }
+    }
+
+    override fun onStop() {
+        HermesRuntime.update { it.copy(appVisible = false) }
+        super.onStop()
+    }
+
     private fun renderRuntime(s: HermesRuntime.Snapshot) {
         if (s.port != loadedPort || s.startedAt != loadedStart ||
             s.phase != HermesRuntime.Phase.RUNNING || s.webCookie.isEmpty()) cookieInstalled = false
@@ -224,12 +242,30 @@ class MainActivity : Activity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_JOB_ID)?.takeIf { it.isNotBlank() }?.let { jobId ->
+            pendingAgentJobId = jobId
+            if (authenticatedPageReady) dispatchAgentJob(jobId)
+        }
         if (intent?.action == Intent.ACTION_SEND) {
             val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
             if (text.isNotBlank()) {
                 sharedText = text
                 if (::web.isInitialized) web.evaluateJavascript("window.hermesShared && window.hermesShared()", null)
             }
+        }
+    }
+
+    private fun dispatchAgentJob(jobId: String) {
+        if (!::web.isInitialized) return
+        val quoted = org.json.JSONObject.quote(jobId)
+        web.evaluateJavascript("window.hermesAgentJob && window.hermesAgentJob($quoted)", null)
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
         }
     }
 
@@ -467,9 +503,36 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun deviceInfo(): String = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}) · ${Build.MANUFACTURER} ${Build.MODEL}"
+
+        @JavascriptInterface
+        fun registerAgentJob(sessionId: String, prompt: String): String =
+            AgentJobCoordinator.registerUiJob(sessionId, prompt)
+
+        @JavascriptInterface
+        fun activateAgentJob(jobId: String): Boolean = AgentJobCoordinator.activateJob(jobId)
+
+        @JavascriptInterface
+        fun scheduleAgentJob(sessionId: String, prompt: String, delayMs: Long, intervalMs: Long): String =
+            AgentJobCoordinator.scheduleNativeJob(
+                sessionId = sessionId,
+                prompt = prompt,
+                delayMs = delayMs,
+                intervalMs = intervalMs.takeIf { it > 0L },
+            )
+
+        @JavascriptInterface
+        fun resumeAgentJob(jobId: String): Boolean = AgentJobCoordinator.resumeJob(jobId)
+
+        @JavascriptInterface
+        fun pauseAgentJob(jobId: String): Boolean = AgentJobCoordinator.pauseJob(jobId)
+
+        @JavascriptInterface
+        fun cancelAgentJob(jobId: String): Boolean = AgentJobCoordinator.cancelJob(jobId)
     }
 
     companion object {
         private const val REQUEST_FILES = 7001
+        private const val REQUEST_NOTIFICATIONS = 7002
+        const val EXTRA_JOB_ID = "hermes_agent_job_id"
     }
 }

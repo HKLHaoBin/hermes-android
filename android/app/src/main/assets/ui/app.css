@@ -275,6 +275,10 @@ body.typing #tabs { display: none; }
 .kv dd { margin: 0; word-break: break-all; color: var(--text-2); }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .buttons.small button { padding: 5px 12px; font-size: 13px; }
+.job-list { margin-top: 10px; display: grid; gap: 10px; }
+.job-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 6px; }
+.job-title { font-weight: 600; color: var(--text-2); }
+.job-row .buttons { margin-top: 2px; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
 .switch-row:last-child { border-bottom: 0; padding-bottom: 2px; }
 .switch-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }

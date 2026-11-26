@@ -34,16 +34,27 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
                 last_error TEXT,
                 runtime_id TEXT,
                 session_id TEXT,
-                notification_id TEXT
+                notification_id TEXT,
+                worker_id TEXT,
+                heartbeat_at INTEGER
             )
             """.trimIndent(),
         )
         db.execSQL("CREATE INDEX jobs_profile_updated ON jobs(profile_id, updated_at DESC)")
         db.execSQL("CREATE INDEX jobs_profile_state ON jobs(profile_id, state)")
+        createScheduleTable(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 1) onCreate(db)
+        if (oldVersion < 1) {
+            onCreate(db)
+            return
+        }
+        if (oldVersion < 2) {
+            db.execSQL("ALTER TABLE jobs ADD COLUMN worker_id TEXT")
+            db.execSQL("ALTER TABLE jobs ADD COLUMN heartbeat_at INTEGER")
+            createScheduleTable(db)
+        }
     }
 
     @Synchronized
@@ -129,6 +140,7 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
         next: JobState,
         now: Long = System.currentTimeMillis(),
         error: String? = null,
+        workerId: String? = null,
     ): JobRecord? {
         require(canTransition(expected, next)) { "illegal transition: ${expected.value} -> ${next.value}" }
         if (expected == JobState.PAUSED &&
@@ -142,12 +154,20 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
             put("state", next.value)
             put("updated_at", effectiveNow)
             if (next == JobState.RUNNING && current.startedAt == null) put("started_at", effectiveNow)
+            if (next == JobState.RUNNING) {
+                putNullable("worker_id", workerId)
+                put("heartbeat_at", effectiveNow)
+            } else {
+                putNull("worker_id")
+                put("heartbeat_at", effectiveNow)
+            }
             if (next.isTerminal) {
                 require(current.startedAt == null || effectiveNow >= current.startedAt) { "finished_at precedes started_at" }
                 put("finished_at", effectiveNow)
             } else putNull("finished_at")
             if (next == JobState.FAILED) putNullable("last_error", safeError(error))
-            else if (next != JobState.PAUSED) putNull("last_error")
+            else if (next == JobState.PAUSED) putNullable("last_error", safeError(error))
+            else putNull("last_error")
         }
         val db = writableDatabase
         db.beginTransaction()
@@ -159,6 +179,70 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
                 arrayOf(jobId, profileId, expected.value, expectedUpdatedAt.toString()),
             )
             val result = if (changed == 1) findVersion(profileId, jobId, next, effectiveNow) else null
+            db.setTransactionSuccessful()
+            return result
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Refresh the worker lease without changing the job state. */
+    @Synchronized
+    fun heartbeat(
+        profileId: String,
+        jobId: String,
+        expectedUpdatedAt: Long,
+        workerId: String,
+        now: Long = System.currentTimeMillis(),
+    ): JobRecord? {
+        require(workerId.isNotBlank()) { "workerId must not be blank" }
+        val effectiveNow = maxOf(now, expectedUpdatedAt + 1)
+        val values = ContentValues().apply {
+            put("updated_at", effectiveNow)
+            put("heartbeat_at", effectiveNow)
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val changed = db.update(
+                TABLE,
+                values,
+                "job_id = ? AND profile_id = ? AND state = ? AND updated_at = ? AND worker_id = ?",
+                arrayOf(jobId, profileId, JobState.RUNNING.value, expectedUpdatedAt.toString(), workerId),
+            )
+            val result = if (changed == 1) findVersion(profileId, jobId, JobState.RUNNING, effectiveNow) else null
+            db.setTransactionSuccessful()
+            return result
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    /** Attach a non-secret runtime payload identifier without changing job state. */
+    @Synchronized
+    fun setRuntimeId(
+        profileId: String,
+        jobId: String,
+        expectedUpdatedAt: Long,
+        runtimeId: String,
+        now: Long = System.currentTimeMillis(),
+    ): JobRecord? {
+        require(runtimeId.isNotBlank()) { "runtimeId must not be blank" }
+        val effectiveNow = maxOf(now, expectedUpdatedAt + 1)
+        val values = ContentValues().apply {
+            put("runtime_id", runtimeId)
+            put("updated_at", effectiveNow)
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val changed = db.update(
+                TABLE,
+                values,
+                "job_id = ? AND profile_id = ? AND updated_at = ?",
+                arrayOf(jobId, profileId, expectedUpdatedAt.toString()),
+            )
+            val result = if (changed == 1) find(db, profileId, jobId) else null
             db.setTransactionSuccessful()
             return result
         } finally {
@@ -181,6 +265,8 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
                 put("updated_at", effectiveNow)
                 putNull("finished_at")
                 put("last_error", "重试次数已达上限")
+                putNull("worker_id")
+                put("heartbeat_at", effectiveNow)
             }
             val db = writableDatabase
             db.beginTransaction()
@@ -205,6 +291,8 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
             putNull("finished_at")
             put("last_error", null as String?)
             put("retry_count", current.retryCount + 1)
+            putNull("worker_id")
+            put("heartbeat_at", effectiveNow)
         }
         val db = writableDatabase
         db.beginTransaction()
@@ -244,6 +332,8 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
                     put("updated_at", effectiveNow)
                     put("last_error", "Android 进程恢复后未找到活动任务")
                     putNull("finished_at")
+                    putNull("worker_id")
+                    put("heartbeat_at", effectiveNow)
                 }
                 changed += db.update(
                     TABLE,
@@ -254,6 +344,156 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
             }
             db.setTransactionSuccessful()
             return changed
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
+    fun createSchedule(
+        profileId: String,
+        jobId: String,
+        payloadRef: String,
+        nextRunAt: Long,
+        intervalMs: Long? = null,
+        scheduleId: String = UUID.randomUUID().toString(),
+        now: Long = System.currentTimeMillis(),
+    ): JobSchedule {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        require(jobId.isNotBlank()) { "jobId must not be blank" }
+        require(payloadRef.isNotBlank()) { "payloadRef must not be blank" }
+        require(nextRunAt >= 0) { "nextRunAt must not be negative" }
+        require(intervalMs == null || intervalMs >= MIN_INTERVAL_MS) { "intervalMs is too short" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val existing = findSchedule(db, profileId, scheduleId)
+            if (existing != null) {
+                check(existing.jobId == jobId && existing.payloadRef == payloadRef) {
+                    "scheduleId belongs to another job"
+                }
+                db.setTransactionSuccessful()
+                return existing
+            }
+            val job = findById(db, jobId)
+            check(job != null && job.profileId == profileId) { "job does not belong to profile" }
+            val values = ContentValues().apply {
+                put("schedule_id", scheduleId)
+                put("profile_id", profileId)
+                put("job_id", jobId)
+                put("payload_ref", payloadRef)
+                put("next_run_at", nextRunAt)
+                putNullableLong("interval_ms", intervalMs)
+                put("enabled", 1)
+                put("created_at", now)
+                put("updated_at", now)
+            }
+            db.insertOrThrow(SCHEDULE_TABLE, null, values)
+            db.setTransactionSuccessful()
+            return findSchedule(db, profileId, scheduleId)!!
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
+    fun scheduleForJob(profileId: String, jobId: String): JobSchedule? =
+        readableDatabase.query(
+            SCHEDULE_TABLE,
+            SCHEDULE_COLUMNS,
+            "profile_id = ? AND job_id = ?",
+            arrayOf(profileId, jobId),
+            null,
+            null,
+            "updated_at DESC",
+            "1",
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.toJobSchedule() else null }
+
+    @Synchronized
+    fun dueSchedules(now: Long = System.currentTimeMillis(), limit: Int = DEFAULT_LIMIT): List<JobSchedule> {
+        val result = ArrayList<JobSchedule>()
+        val safeLimit = limit.coerceIn(1, MAX_LIMIT)
+        readableDatabase.query(
+            SCHEDULE_TABLE,
+            SCHEDULE_COLUMNS,
+            "enabled = 1 AND next_run_at <= ?",
+            arrayOf(now.toString()),
+            null,
+            null,
+            "next_run_at ASC, updated_at ASC, schedule_id ASC",
+            safeLimit.toString(),
+        ).use { cursor ->
+            while (cursor.moveToNext()) result += cursor.toJobSchedule()
+        }
+        return result
+    }
+
+    @Synchronized
+    fun advanceSchedule(
+        profileId: String,
+        scheduleId: String,
+        expectedUpdatedAt: Long,
+        expectedJobId: String,
+        nextJobId: String,
+        nextRunAt: Long,
+        enabled: Boolean,
+        now: Long = System.currentTimeMillis(),
+    ): JobSchedule? {
+        require(nextJobId.isNotBlank()) { "nextJobId must not be blank" }
+        require(nextRunAt >= 0) { "nextRunAt must not be negative" }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val job = findById(db, nextJobId)
+            check(job != null && job.profileId == profileId) { "next job does not belong to profile" }
+            val values = ContentValues().apply {
+                put("job_id", nextJobId)
+                put("next_run_at", nextRunAt)
+                put("enabled", if (enabled) 1 else 0)
+                put("updated_at", maxOf(now, expectedUpdatedAt + 1))
+            }
+            val changed = db.update(
+                SCHEDULE_TABLE,
+                values,
+                "schedule_id = ? AND profile_id = ? AND job_id = ? AND updated_at = ?",
+                arrayOf(scheduleId, profileId, expectedJobId, expectedUpdatedAt.toString()),
+            )
+            val result = if (changed == 1) findSchedule(db, profileId, scheduleId) else null
+            db.setTransactionSuccessful()
+            return result
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    @Synchronized
+    fun setScheduleDue(
+        profileId: String,
+        scheduleId: String,
+        expectedUpdatedAt: Long,
+        nextRunAt: Long,
+        enabled: Boolean = true,
+        now: Long = System.currentTimeMillis(),
+    ): JobSchedule? {
+        require(nextRunAt >= 0) { "nextRunAt must not be negative" }
+        val effectiveNow = maxOf(now, expectedUpdatedAt + 1)
+        val values = ContentValues().apply {
+            put("next_run_at", nextRunAt)
+            put("enabled", if (enabled) 1 else 0)
+            put("updated_at", effectiveNow)
+        }
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            val changed = db.update(
+                SCHEDULE_TABLE,
+                values,
+                "schedule_id = ? AND profile_id = ? AND updated_at = ?",
+                arrayOf(scheduleId, profileId, expectedUpdatedAt.toString()),
+            )
+            val result = if (changed == 1) findSchedule(db, profileId, scheduleId) else null
+            db.setTransactionSuccessful()
+            return result
         } finally {
             db.endTransaction()
         }
@@ -312,6 +552,18 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
             "1",
         ).use { cursor -> if (cursor.moveToFirst()) cursor.toJobRecord() else null }
 
+    private fun findSchedule(db: SQLiteDatabase, profileId: String, scheduleId: String): JobSchedule? =
+        db.query(
+            SCHEDULE_TABLE,
+            SCHEDULE_COLUMNS,
+            "profile_id = ? AND schedule_id = ?",
+            arrayOf(profileId, scheduleId),
+            null,
+            null,
+            null,
+            "1",
+        ).use { cursor -> if (cursor.moveToFirst()) cursor.toJobSchedule() else null }
+
     private fun android.database.Cursor.toJobRecord(): JobRecord = JobRecord(
         jobId = getString(getColumnIndexOrThrow("job_id")),
         profileId = getString(getColumnIndexOrThrow("profile_id")),
@@ -325,6 +577,20 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
         runtimeId = getNullableString("runtime_id"),
         sessionId = getNullableString("session_id"),
         notificationId = getNullableString("notification_id"),
+        workerId = getNullableString("worker_id"),
+        heartbeatAt = getNullableLong("heartbeat_at"),
+    )
+
+    private fun android.database.Cursor.toJobSchedule(): JobSchedule = JobSchedule(
+        scheduleId = getString(getColumnIndexOrThrow("schedule_id")),
+        profileId = getString(getColumnIndexOrThrow("profile_id")),
+        jobId = getString(getColumnIndexOrThrow("job_id")),
+        payloadRef = getString(getColumnIndexOrThrow("payload_ref")),
+        nextRunAt = getLong(getColumnIndexOrThrow("next_run_at")),
+        intervalMs = getNullableLong("interval_ms"),
+        enabled = getInt(getColumnIndexOrThrow("enabled")) != 0,
+        createdAt = getLong(getColumnIndexOrThrow("created_at")),
+        updatedAt = getLong(getColumnIndexOrThrow("updated_at")),
     )
 
     private fun safeError(error: String?): String? {
@@ -340,6 +606,10 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
     }
 
     private fun ContentValues.putNullable(key: String, value: String?) {
+        if (value == null) putNull(key) else put(key, value)
+    }
+
+    private fun ContentValues.putNullableLong(key: String, value: Long?) {
         if (value == null) putNull(key) else put(key, value)
     }
 
@@ -360,19 +630,46 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
 
     companion object {
         private const val DATABASE_NAME = "hermes_jobs.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         private const val TABLE = "jobs"
+        private const val SCHEDULE_TABLE = "job_schedules"
         private const val DEFAULT_LIMIT = 50
         private const val MAX_LIMIT = 200
         private const val MAX_RETRIES = 3
+        private const val MIN_INTERVAL_MS = 60_000L
         private val COLUMNS = arrayOf(
             "job_id", "profile_id", "state", "created_at", "updated_at", "started_at",
             "finished_at", "retry_count", "last_error", "runtime_id", "session_id",
-            "notification_id",
+            "notification_id", "worker_id", "heartbeat_at",
+        )
+        private val SCHEDULE_COLUMNS = arrayOf(
+            "schedule_id", "profile_id", "job_id", "payload_ref", "next_run_at", "interval_ms",
+            "enabled", "created_at", "updated_at",
         )
 
+        private fun createScheduleTable(db: SQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS job_schedules (
+                    schedule_id TEXT PRIMARY KEY NOT NULL,
+                    profile_id TEXT NOT NULL,
+                    job_id TEXT NOT NULL,
+                    payload_ref TEXT NOT NULL,
+                    next_run_at INTEGER NOT NULL,
+                    interval_ms INTEGER,
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY(job_id) REFERENCES jobs(job_id) ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS schedules_due ON job_schedules(enabled, next_run_at)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS schedules_profile_job ON job_schedules(profile_id, job_id)")
+        }
+
         fun canTransition(old: JobState, next: JobState): Boolean = next in when (old) {
-            JobState.QUEUED -> setOf(JobState.RUNNING, JobState.CANCELLED)
+            JobState.QUEUED -> setOf(JobState.RUNNING, JobState.PAUSED, JobState.FAILED, JobState.CANCELLED)
             JobState.RUNNING -> setOf(JobState.PAUSED, JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED)
             JobState.PAUSED -> setOf(JobState.QUEUED, JobState.RUNNING, JobState.FAILED, JobState.CANCELLED)
             JobState.FAILED -> setOf(JobState.QUEUED, JobState.CANCELLED)
@@ -409,4 +706,18 @@ data class JobRecord(
     val runtimeId: String?,
     val sessionId: String?,
     val notificationId: String?,
+    val workerId: String?,
+    val heartbeatAt: Long?,
+)
+
+data class JobSchedule(
+    val scheduleId: String,
+    val profileId: String,
+    val jobId: String,
+    val payloadRef: String,
+    val nextRunAt: Long,
+    val intervalMs: Long?,
+    val enabled: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long,
 )

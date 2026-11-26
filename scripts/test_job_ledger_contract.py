@@ -10,7 +10,7 @@ STATES = frozenset({
 TERMINAL = frozenset({'succeeded', 'cancelled'})
 MAX_RETRIES = 3
 TRANSITIONS = {
-    'queued': frozenset({'running', 'cancelled'}),
+    'queued': frozenset({'running', 'paused', 'failed', 'cancelled'}),
     'running': frozenset({'paused', 'succeeded', 'failed', 'cancelled'}),
     'paused': frozenset({'queued', 'running', 'failed', 'cancelled'}),
     'failed': frozenset({'queued', 'cancelled'}),
@@ -50,7 +50,7 @@ DOCUMENTED_TRANSITIONS = documented_transitions()
 REQUIRED_FIELDS = frozenset({
     'job_id', 'profile_id', 'state', 'created_at', 'updated_at', 'started_at',
     'finished_at', 'retry_count', 'last_error', 'runtime_id', 'session_id',
-    'notification_id',
+    'notification_id', 'worker_id', 'heartbeat_at',
 })
 
 
@@ -70,17 +70,17 @@ def validate_record(record: dict) -> None:
         raise ValueError(f'unknown state: {record["state"]}')
     if type(record['created_at']) is not int or type(record['updated_at']) is not int:
         raise ValueError('timestamps must be integers')
-    for field in ('started_at', 'finished_at'):
+    for field in ('started_at', 'finished_at', 'heartbeat_at'):
         if record[field] is not None and type(record[field]) is not int:
             raise ValueError(f'{field} must be an integer or null')
-    for field in ('last_error', 'runtime_id', 'session_id', 'notification_id'):
+    for field in ('last_error', 'runtime_id', 'session_id', 'notification_id', 'worker_id'):
         if record[field] is not None and not isinstance(record[field], str):
             raise ValueError(f'{field} must be a string or null')
     if type(record['retry_count']) is not int or record['retry_count'] < 0 or record['retry_count'] > MAX_RETRIES:
         raise ValueError('retry_count must be between 0 and MAX_RETRIES')
     if record['updated_at'] < record['created_at']:
         raise ValueError('updated_at precedes created_at')
-    if record['state'] in {'running', 'paused', 'succeeded', 'failed'} and type(record['started_at']) is not int:
+    if record['state'] in {'running', 'paused', 'succeeded'} and type(record['started_at']) is not int:
         raise ValueError('active or completed jobs require started_at')
     if record['state'] in TERMINAL and type(record['finished_at']) is not int:
         raise ValueError('terminal jobs require finished_at')
@@ -107,7 +107,8 @@ if __name__ == '__main__':
                 'started_at': 'integer/null', 'finished_at': 'integer/null',
                 'retry_count': 'integer', 'last_error': 'string/null',
                 'runtime_id': 'string/null', 'session_id': 'string/null',
-                'notification_id': 'string/null',
+                'notification_id': 'string/null', 'worker_id': 'string/null',
+                'heartbeat_at': 'integer/null',
             }
             self.assertEqual(DOCUMENTED_FIELDS, expected_types)
 
@@ -120,7 +121,7 @@ if __name__ == '__main__':
                 'job_id': 'j1', 'profile_id': 'p1', 'state': 'queued',
                 'created_at': 10, 'updated_at': 10, 'started_at': None,
                 'finished_at': None, 'retry_count': 0, 'last_error': None,
-                'runtime_id': None, 'session_id': None, 'notification_id': None,
+                'runtime_id': None, 'session_id': None, 'notification_id': None, 'worker_id': None, 'heartbeat_at': None,
             }
             invalid = dict(base, state='unknown')
             with self.assertRaisesRegex(ValueError, 'unknown state'):
@@ -134,7 +135,7 @@ if __name__ == '__main__':
                 'job_id': 'j1', 'profile_id': 'p1', 'state': 'queued',
                 'created_at': 10, 'updated_at': 10, 'started_at': None,
                 'finished_at': None, 'retry_count': 0, 'last_error': None,
-                'runtime_id': None, 'session_id': None, 'notification_id': None,
+                'runtime_id': None, 'session_id': None, 'notification_id': None, 'worker_id': None, 'heartbeat_at': None,
             }
             cases = [
                 (dict(base, job_id=None), 'job_id'),
@@ -146,6 +147,8 @@ if __name__ == '__main__':
                 (dict(base, runtime_id=3), 'runtime_id'),
                 (dict(base, session_id=3), 'session_id'),
                 (dict(base, notification_id=3), 'notification_id'),
+                (dict(base, worker_id=3), 'worker_id'),
+                (dict(base, heartbeat_at='10'), 'heartbeat_at'),
                 (dict(base, retry_count=True), 'retry_count'),
                 (dict(base, retry_count=MAX_RETRIES + 1), 'retry_count'),
             ]
@@ -159,7 +162,7 @@ if __name__ == '__main__':
                 'job_id': 'j1', 'profile_id': 'p1', 'state': 'queued',
                 'created_at': 10, 'updated_at': 10, 'started_at': None,
                 'finished_at': None, 'retry_count': 0, 'last_error': None,
-                'runtime_id': None, 'session_id': None, 'notification_id': None,
+                'runtime_id': None, 'session_id': None, 'notification_id': None, 'worker_id': None, 'heartbeat_at': None,
             }
             with self.assertRaisesRegex(ValueError, 'started_at'):
                 validate_record(dict(base, state='running'))
@@ -168,6 +171,7 @@ if __name__ == '__main__':
             with self.assertRaisesRegex(ValueError, 'finished_at'):
                 validate_record(dict(base, state='succeeded', started_at=11))
             validate_record(dict(base, state='running', started_at=11))
+            validate_record(dict(base, state='failed', last_error='任务执行失败'))
             validate_record(dict(base, state='cancelled', finished_at=12))
             validate_record(dict(base, state='succeeded', started_at=11, finished_at=12))
             with self.assertRaisesRegex(ValueError, 'non-terminal jobs'):
@@ -178,7 +182,7 @@ if __name__ == '__main__':
                 'job_id': 'j1', 'profile_id': 'p1', 'state': 'queued',
                 'created_at': 10, 'updated_at': 10, 'started_at': None,
                 'finished_at': None, 'retry_count': 0, 'last_error': None,
-                'runtime_id': None, 'session_id': None, 'notification_id': None,
+                'runtime_id': None, 'session_id': None, 'notification_id': None, 'worker_id': None, 'heartbeat_at': None,
             }
             for field in REQUIRED_FIELDS:
                 with self.subTest(field=field):
