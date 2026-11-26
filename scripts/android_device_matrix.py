@@ -99,7 +99,7 @@ _SECRET_KEY = re.compile(
 )
 _SECRET_VALUE = re.compile(
     r"(?:bearer\s+[A-Za-z0-9._~+/=-]+|"
-    r"(?:api[_-]?key|password|authorization|cookie|access[_-]?token|refresh[_-]?token)\s*[:=])|"
+    r"(?:api[_-]?key|password|authorization|cookie|token|access[_-]?token|refresh[_-]?token)\s*[:=]\s*\S+)|"
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     re.IGNORECASE,
 )
@@ -110,6 +110,21 @@ _SAFE_REDACTION_KEYS = {
     "patterns_checked",
     "policy_version",
 }
+_UNKNOWN_LITERALS = {
+    "",
+    "unknown",
+    "n/a",
+    "na",
+    "none",
+    "null",
+    "<unknown>",
+    "unset",
+    "not available",
+    "test-only",
+    "fixture",
+    "mock",
+}
+_EMULATOR_TRANSPORTS = {"emulator", "test", "mock", "fixture"}
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -140,6 +155,28 @@ def sha256_file(path: Path) -> str:
 def _non_empty(value: Any, name: str, errors: list[str]) -> None:
     if not isinstance(value, str) or not value.strip():
         errors.append(f"{name} must be a non-empty string")
+
+
+def _known_identity(value: Any, name: str, errors: list[str]) -> None:
+    _non_empty(value, name, errors)
+    if isinstance(value, str) and value.strip().lower() in _UNKNOWN_LITERALS:
+        errors.append(f"{name} must contain a captured identity, not {value!r}")
+
+
+def _object_shape(
+    value: Any,
+    name: str,
+    *,
+    required: set[str],
+    allowed: set[str],
+    errors: list[str],
+) -> bool:
+    if not isinstance(value, dict):
+        errors.append(f"{name} must be an object")
+        return False
+    errors.extend(f"{name} is missing required field {field}" for field in sorted(required - set(value)))
+    errors.extend(f"{name} contains undeclared field {field}" for field in sorted(set(value) - allowed))
+    return True
 
 
 def _sha(value: Any, name: str, errors: list[str], *, length: int = 64) -> None:
@@ -177,6 +214,11 @@ def _redaction_findings(value: Any, path: str = "$") -> list[str]:
     return findings
 
 
+def _evidence_content_findings(data: bytes, path: str) -> list[str]:
+    text = data.decode("utf-8", errors="replace")
+    return _redaction_findings(text, path)
+
+
 def _relative_evidence_path(path: str) -> bool:
     candidate = Path(path)
     return not candidate.is_absolute() and ".." not in candidate.parts
@@ -189,8 +231,13 @@ def _evidence_errors(test: dict[str, Any], *, receipt_root: Path | None = None) 
         return [f"{test.get('id', '<unknown>')}.evidence must be an array"]
     for index, item in enumerate(evidence):
         prefix = f"{test.get('id', '<unknown>')}.evidence[{index}]"
-        if not isinstance(item, dict):
-            errors.append(f"{prefix} must be an object")
+        if not _object_shape(
+            item,
+            prefix,
+            required={"path", "sha256", "kind"},
+            allowed={"path", "sha256", "kind"},
+            errors=errors,
+        ):
             continue
         _non_empty(item.get("path"), f"{prefix}.path", errors)
         if isinstance(item.get("path"), str) and not _relative_evidence_path(item["path"]):
@@ -201,8 +248,11 @@ def _evidence_errors(test: dict[str, Any], *, receipt_root: Path | None = None) 
             evidence_path = receipt_root / item["path"]
             if not evidence_path.is_file():
                 errors.append(f"{prefix}.path does not exist: {item['path']}")
-            elif sha256_file(evidence_path) != item.get("sha256"):
-                errors.append(f"{prefix}.sha256 does not match file: {item['path']}")
+            else:
+                data = evidence_path.read_bytes()
+                if sha256_file(evidence_path) != item.get("sha256"):
+                    errors.append(f"{prefix}.sha256 does not match file: {item['path']}")
+                errors.extend(_evidence_content_findings(data, f"{prefix}.bytes"))
     return errors
 
 
@@ -217,10 +267,40 @@ def aggregate_status(statuses: Iterable[str]) -> str:
     return "PASS"
 
 
+def artifact_identity(artifact: dict[str, Any]) -> tuple[Any, ...]:
+    apk = artifact["apk"]
+    build = artifact["build"]
+    runtime = artifact["runtime"]
+    return (
+        apk["filename"],
+        apk["sha256"],
+        apk["size_bytes"],
+        apk["application_id"],
+        apk["signer_sha256"],
+        apk["version_name"],
+        apk["version_code"],
+        build["repository"],
+        build["workflow"],
+        build["run_id"],
+        build["head_sha"],
+        runtime["version"],
+        runtime["sha256"],
+        runtime["source_commit"],
+        runtime["payload_id"],
+        artifact["webui_revision"],
+    )
+
+
 def validate_artifact(artifact: Any) -> list[str]:
     errors: list[str] = []
-    if not isinstance(artifact, dict):
-        return ["artifact must be an object"]
+    if not _object_shape(
+        artifact,
+        "artifact",
+        required={"artifact_kind", "schema_version", "apk", "build", "runtime", "webui_revision"},
+        allowed={"artifact_kind", "schema_version", "apk", "build", "runtime", "webui_revision"},
+        errors=errors,
+    ):
+        return errors
     if artifact.get("artifact_kind") != ARTIFACT_KIND:
         errors.append(f"artifact_kind must be {ARTIFACT_KIND}")
     if artifact.get("schema_version") != SCHEMA_VERSION:
@@ -228,10 +308,13 @@ def validate_artifact(artifact: Any) -> list[str]:
     apk = artifact.get("apk")
     build = artifact.get("build")
     runtime = artifact.get("runtime")
-    for name, value in (("artifact.apk", apk), ("artifact.build", build), ("artifact.runtime", runtime)):
-        if not isinstance(value, dict):
-            errors.append(f"{name} must be an object")
-    if isinstance(apk, dict):
+    if _object_shape(
+        apk,
+        "artifact.apk",
+        required={"filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"},
+        allowed={"filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"},
+        errors=errors,
+    ):
         for field in ("filename", "application_id", "version_name"):
             _non_empty(apk.get(field), f"artifact.apk.{field}", errors)
         _sha(apk.get("sha256"), "artifact.apk.sha256", errors)
@@ -240,15 +323,29 @@ def validate_artifact(artifact: Any) -> list[str]:
             errors.append("artifact.apk.size_bytes must be a positive integer")
         if not isinstance(apk.get("version_code"), int) or apk["version_code"] <= 0:
             errors.append("artifact.apk.version_code must be a positive integer")
-    if isinstance(build, dict):
+    if _object_shape(
+        build,
+        "artifact.build",
+        required={"repository", "workflow", "run_id", "head_sha"},
+        allowed={"repository", "workflow", "run_id", "head_sha"},
+        errors=errors,
+    ):
         for field in ("repository", "workflow"):
-            _non_empty(build.get(field), f"artifact.build.{field}", errors)
+            _known_identity(build.get(field), f"artifact.build.{field}", errors)
+        if isinstance(build.get("repository"), str) and not re.fullmatch(r"[^/\s]+/[^/\s]+", build["repository"]):
+            errors.append("artifact.build.repository must be an owner/repository value")
         if not isinstance(build.get("run_id"), str) or not _RUN_ID.fullmatch(build["run_id"]):
             errors.append("artifact.build.run_id must contain only digits")
         _sha(build.get("head_sha"), "artifact.build.head_sha", errors, length=40)
-    if isinstance(runtime, dict):
+    if _object_shape(
+        runtime,
+        "artifact.runtime",
+        required={"version", "sha256", "source_commit", "payload_id"},
+        allowed={"version", "sha256", "source_commit", "payload_id"},
+        errors=errors,
+    ):
         for field in ("version", "payload_id"):
-            _non_empty(runtime.get(field), f"artifact.runtime.{field}", errors)
+            _known_identity(runtime.get(field), f"artifact.runtime.{field}", errors)
         _sha(runtime.get("sha256"), "artifact.runtime.sha256", errors)
         _sha(runtime.get("source_commit"), "artifact.runtime.source_commit", errors, length=40)
     _sha(artifact.get("webui_revision"), "artifact.webui_revision", errors, length=40)
@@ -257,8 +354,33 @@ def validate_artifact(artifact: Any) -> list[str]:
 
 def validate_device(device: Any) -> list[str]:
     errors: list[str] = []
-    if not isinstance(device, dict):
-        return ["device must be an object"]
+    required = {
+        "slot_id",
+        "device_id",
+        "manufacturer",
+        "model",
+        "oem",
+        "oem_skin",
+        "abi",
+        "android_release",
+        "api_level",
+        "build_fingerprint",
+        "security_patch_level",
+        "serial_sha256",
+        "serial_suffix",
+        "authorized",
+        "authorization_ref",
+        "is_emulator",
+        "transport",
+        "webview",
+        "display",
+        "input",
+        "battery",
+        "notification_permission",
+        "network",
+    }
+    if not _object_shape(device, "device", required=required, allowed=required, errors=errors):
+        return errors
     for field in (
         "slot_id",
         "device_id",
@@ -270,51 +392,77 @@ def validate_device(device: Any) -> list[str]:
         "android_release",
         "build_fingerprint",
         "security_patch_level",
-        "serial_sha256",
-        "serial_suffix",
         "authorization_ref",
     ):
-        _non_empty(device.get(field), f"device.{field}", errors)
+        _known_identity(device.get(field), f"device.{field}", errors)
     if device.get("abi") != "arm64-v8a":
         errors.append("device.abi must be arm64-v8a")
     if not isinstance(device.get("api_level"), int) or device["api_level"] not in {33, 34, 35, 36}:
         errors.append("device.api_level must be one of 33, 34, 35, 36")
     _sha(device.get("serial_sha256"), "device.serial_sha256", errors)
+    _non_empty(device.get("serial_suffix"), "device.serial_suffix", errors)
     if not isinstance(device.get("authorized"), bool) or not device.get("authorized"):
         errors.append("device.authorized must be true for a hardware receipt")
+    if device.get("is_emulator") is not False:
+        errors.append("device.is_emulator must be false for real hardware")
+    transport = device.get("transport")
+    if not isinstance(transport, str) or not transport.strip():
+        errors.append("device.transport must be a non-empty transport")
+    elif transport.lower() in _EMULATOR_TRANSPORTS or "emulator" in transport.lower():
+        errors.append("device.transport identifies an emulator/test endpoint")
     webview = device.get("webview")
-    if not isinstance(webview, dict):
-        errors.append("device.webview must be an object")
-    else:
+    if _object_shape(
+        webview,
+        "device.webview",
+        required={"package", "version", "provider"},
+        allowed={"package", "version", "provider"},
+        errors=errors,
+    ):
         for field in ("package", "version", "provider"):
-            _non_empty(webview.get(field), f"device.webview.{field}", errors)
+            _known_identity(webview.get(field), f"device.webview.{field}", errors)
     display = device.get("display")
-    if not isinstance(display, dict):
-        errors.append("device.display must be an object")
-    else:
+    if _object_shape(
+        display,
+        "device.display",
+        required={"width", "height", "density"},
+        allowed={"width", "height", "density"},
+        errors=errors,
+    ):
         for field in ("width", "height", "density"):
             if not isinstance(display.get(field), int) or display[field] <= 0:
                 errors.append(f"device.display.{field} must be a positive integer")
     input_info = device.get("input")
-    if not isinstance(input_info, dict):
-        errors.append("device.input must be an object")
-    else:
-        _non_empty(input_info.get("ime"), "device.input.ime", errors)
+    if _object_shape(
+        input_info,
+        "device.input",
+        required={"ime", "talkback"},
+        allowed={"ime", "talkback"},
+        errors=errors,
+    ):
+        _known_identity(input_info.get("ime"), "device.input.ime", errors)
         if not isinstance(input_info.get("talkback"), bool):
             errors.append("device.input.talkback must be boolean")
     battery = device.get("battery")
-    if not isinstance(battery, dict):
-        errors.append("device.battery must be an object")
-    else:
-        if battery.get("optimization") not in {"optimized", "exempt", "unknown"}:
+    if _object_shape(
+        battery,
+        "device.battery",
+        required={"optimization", "oem_policy"},
+        allowed={"optimization", "oem_policy"},
+        errors=errors,
+    ):
+        if not isinstance(battery.get("optimization"), str) or battery.get("optimization") not in {"optimized", "exempt", "unknown"}:
             errors.append("device.battery.optimization must be optimized, exempt, or unknown")
         _non_empty(battery.get("oem_policy"), "device.battery.oem_policy", errors)
-    if device.get("notification_permission") not in {"allow", "deny", "default", "unknown"}:
+    if not isinstance(device.get("notification_permission"), str) or device.get("notification_permission") not in {"allow", "deny", "default", "unknown"}:
         errors.append("device.notification_permission has an invalid value")
     network = device.get("network")
-    if not isinstance(network, dict):
-        errors.append("device.network must be an object")
-    else:
+    if _object_shape(
+        network,
+        "device.network",
+        required={"mode", "backend_id"},
+        allowed={"mode", "backend_id"},
+        errors=errors,
+    ):
         _non_empty(network.get("mode"), "device.network.mode", errors)
         _non_empty(network.get("backend_id"), "device.network.backend_id", errors)
     return errors
@@ -322,28 +470,38 @@ def validate_device(device: Any) -> list[str]:
 
 def _validate_test(test: Any, expected_id: str, *, receipt_root: Path | None = None) -> list[str]:
     errors: list[str] = []
-    if not isinstance(test, dict):
-        return [f"tests[{expected_id}] must be an object"]
+    required = {"id", "status", "observed", "reason", "failure_class", "evidence", "redaction_checked"}
+    if not _object_shape(test, f"tests[{expected_id}]", required=required, allowed=required | {"started_at", "finished_at"}, errors=errors):
+        return errors
     if test.get("id") != expected_id:
         errors.append(f"test id mismatch: expected {expected_id}")
     status = test.get("status")
     if status not in STATUSES:
         errors.append(f"{expected_id}.status must be one of {STATUSES}")
         return errors
-    _non_empty(test.get("observed"), f"{expected_id}.observed", errors) if status in {"PASS", "FAIL"} else None
-    if status in {"FAIL", "BLOCKED", "NOT RUN"}:
-        _non_empty(test.get("reason"), f"{expected_id}.reason", errors)
-    if status in {"FAIL", "BLOCKED"} and test.get("failure_class") not in FAILURE_CLASSES:
+    if not isinstance(test.get("observed"), str):
+        errors.append(f"{expected_id}.observed must be a string")
+    if status in {"PASS", "FAIL"}:
+        _non_empty(test.get("observed"), f"{expected_id}.observed", errors)
+    _non_empty(test.get("reason"), f"{expected_id}.reason", errors)
+    failure_class = test.get("failure_class")
+    if failure_class is not None and not isinstance(failure_class, str):
+        errors.append(f"{expected_id}.failure_class must be a string or null")
+    if failure_class is not None and failure_class not in FAILURE_CLASSES:
+        errors.append(f"{expected_id}.failure_class has an invalid value")
+    if status in {"FAIL", "BLOCKED"} and failure_class not in FAILURE_CLASSES:
         errors.append(f"{expected_id}.failure_class is required for {status}")
-    if status == "PASS" and test.get("failure_class") not in {None, ""}:
+    if status == "PASS" and failure_class is not None:
         errors.append(f"{expected_id}.failure_class must be empty for PASS")
-    if test.get("redaction_checked") is not True:
+    if not isinstance(test.get("redaction_checked"), bool) or test.get("redaction_checked") is not True:
         errors.append(f"{expected_id}.redaction_checked must be true")
     errors.extend(_evidence_errors(test, receipt_root=receipt_root))
     if status in {"PASS", "FAIL"} and not test.get("evidence"):
         errors.append(f"{expected_id}.evidence is required for {status}")
-    if status in {"PASS", "FAIL"}:
-        for field in ("started_at", "finished_at"):
+    for field in ("started_at", "finished_at"):
+        if field in test:
+            _timestamp(test.get(field), f"{expected_id}.{field}", errors)
+        elif status in {"PASS", "FAIL"}:
             _timestamp(test.get(field), f"{expected_id}.{field}", errors)
     return errors
 
@@ -356,8 +514,21 @@ def validate_receipt(
     check_evidence: bool = False,
 ) -> list[str]:
     errors = _redaction_findings(receipt)
-    if not isinstance(receipt, dict):
-        return ["receipt must be an object"] + errors
+    required = {
+        "receipt_kind",
+        "schema_version",
+        "receipt_id",
+        "generated_at",
+        "aggregate_status",
+        "operator",
+        "device",
+        "artifact",
+        "preconditions",
+        "tests",
+        "redaction",
+    }
+    if not _object_shape(receipt, "receipt", required=required, allowed=required, errors=errors):
+        return errors
     if receipt.get("receipt_kind") != RECEIPT_KIND:
         errors.append(f"receipt_kind must be {RECEIPT_KIND}")
     if receipt.get("schema_version") != SCHEMA_VERSION:
@@ -366,27 +537,41 @@ def validate_receipt(
         _non_empty(receipt.get(field), field, errors)
     _timestamp(receipt.get("generated_at"), "generated_at", errors)
     operator = receipt.get("operator")
-    if not isinstance(operator, dict):
-        errors.append("operator must be an object")
-    else:
+    if _object_shape(
+        operator,
+        "operator",
+        required={"id", "authorization_ref"},
+        allowed={"id", "authorization_ref"},
+        errors=errors,
+    ):
         _non_empty(operator.get("id"), "operator.id", errors)
-        _non_empty(operator.get("authorization_ref"), "operator.authorization_ref", errors)
+        _known_identity(operator.get("authorization_ref"), "operator.authorization_ref", errors)
     errors.extend(validate_device(receipt.get("device")))
     errors.extend(validate_artifact(receipt.get("artifact")))
     preconditions = receipt.get("preconditions")
-    if not isinstance(preconditions, dict):
-        errors.append("preconditions must be an object")
-    else:
+    if _object_shape(
+        preconditions,
+        "preconditions",
+        required={"install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"},
+        allowed={"install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"},
+        errors=errors,
+    ):
         for field in ("install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"):
             _non_empty(preconditions.get(field), f"preconditions.{field}", errors)
     redaction = receipt.get("redaction")
-    if not isinstance(redaction, dict):
-        errors.append("redaction must be an object")
-    else:
-        if redaction.get("policy_version") != REDACTION_POLICY_VERSION:
+    if _object_shape(
+        redaction,
+        "redaction",
+        required={"policy_version", "raw_serial_stored", "secrets_stored", "patterns_checked"},
+        allowed={"policy_version", "raw_serial_stored", "secrets_stored", "patterns_checked"},
+        errors=errors,
+    ):
+        if not isinstance(redaction.get("policy_version"), str) or redaction.get("policy_version") != REDACTION_POLICY_VERSION:
             errors.append(f"redaction.policy_version must be {REDACTION_POLICY_VERSION}")
         for field in ("raw_serial_stored", "secrets_stored", "patterns_checked"):
-            if redaction.get(field) is not False and field != "patterns_checked":
+            if not isinstance(redaction.get(field), bool):
+                errors.append(f"redaction.{field} must be boolean")
+            elif redaction.get(field) is not False and field != "patterns_checked":
                 errors.append(f"redaction.{field} must be false")
         if redaction.get("patterns_checked") is not True:
             errors.append("redaction.patterns_checked must be true")
@@ -417,7 +602,7 @@ def validate_receipt(
     computed = aggregate_status(statuses)
     if receipt.get("aggregate_status") != computed:
         errors.append(f"aggregate_status must be {computed}, got {receipt.get('aggregate_status')}")
-    if receipt.get("aggregate_status") not in STATUSES:
+    if not isinstance(receipt.get("aggregate_status"), str) or receipt.get("aggregate_status") not in STATUSES:
         errors.append(f"aggregate_status must be one of {STATUSES}")
     return errors
 
@@ -463,6 +648,16 @@ def validate_matrix(matrix: Any) -> list[str]:
     expected_slots = {slot["slot_id"] for slot in REQUIRED_SLOTS}
     if seen != expected_slots:
         errors.append(f"matrix slots must be exactly {sorted(expected_slots)}")
+    expected_by_id = {slot["slot_id"]: slot for slot in REQUIRED_SLOTS}
+    for slot in slots:
+        expected = expected_by_id.get(slot.get("slot_id"))
+        if expected is None:
+            continue
+        for field in ("api_level", "oem", "abi", "tier", "required"):
+            if slot.get(field) != expected[field]:
+                errors.append(
+                    f"matrix slot {slot['slot_id']}.{field} must be {expected[field]!r}, got {slot.get(field)!r}"
+                )
     required_api = {slot["api_level"] for slot in slots if slot.get("required")}
     if required_api != {33, 34, 35, 36}:
         errors.append("required matrix slots must cover API 33, 34, 35, and 36")
@@ -502,6 +697,24 @@ def _write_json_atomic(path: Path, value: dict[str, Any]) -> None:
             pass
 
 
+def _resolve_repository(
+    repository: str | None,
+    owner: str | None,
+    repo: str | None,
+) -> str:
+    if repository and (owner or repo):
+        raise ValueError("pass either --repository or --owner/--repo, not both")
+    if repository:
+        value = repository.strip()
+    elif owner and repo:
+        value = f"{owner.strip()}/{repo.strip()}"
+    else:
+        raise ValueError("explicit repository provenance is required")
+    if not re.fullmatch(r"[^/\s]+/[^/\s]+", value):
+        raise ValueError("repository provenance must be an owner/repository value")
+    return value
+
+
 def build_artifact_manifest(
     apk_path: Path,
     *,
@@ -516,7 +729,9 @@ def build_artifact_manifest(
     runtime_source_commit: str,
     payload_id: str,
     webui_revision: str,
-    repository: str = "HKLHaoBin/hermes-android",
+    repository: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
     workflow: str = "Build APK",
 ) -> dict[str, Any]:
     if not apk_path.is_file():
@@ -540,7 +755,7 @@ def build_artifact_manifest(
             "signer_sha256": signer_sha256.lower(),
         },
         "build": {
-            "repository": repository,
+            "repository": _resolve_repository(repository, owner, repo),
             "workflow": workflow,
             "run_id": build_run_id,
             "head_sha": head_sha.lower(),
@@ -645,6 +860,17 @@ def _normalize_oem(manufacturer: str) -> str:
     return manufacturer.strip() or "unknown"
 
 
+def _is_emulator_serial(serial: str) -> bool:
+    lower = serial.lower()
+    return lower.startswith(("emulator-", "test-", "mock-", "fixture-"))
+
+
+def _transport_for_serial(serial: str) -> str:
+    if re.fullmatch(r"[^:]+:\d+", serial):
+        return "tcpip"
+    return "usb"
+
+
 def _oem_skin(props: dict[str, str]) -> str:
     for key in (
         "ro.build.version.oneui",
@@ -708,8 +934,14 @@ def capture_receipt(
         serial = devices[0]["serial"]
     elif not any(device["serial"] == serial for device in devices):
         raise BlockedError(f"requested serial is not an authorized online ADB device: {serial}")
+    assert serial is not None
+    if _is_emulator_serial(serial):
+        raise BlockedError(f"ADB serial identifies an emulator/test endpoint: {serial}")
 
     props = _parse_getprop(_run_adb(adb, serial, "shell", "getprop"))
+    qemu_values = [props.get(key, "").strip().lower() for key in ("ro.kernel.qemu", "ro.boot.qemu", "ro.boot.emulator")]
+    if any(value in {"1", "true", "yes"} for value in qemu_values):
+        raise BlockedError("device properties identify an emulator/test endpoint")
     abi = _first_abi(props.get("ro.product.cpu.abilist", ""))
     api_level_text = props.get("ro.build.version.sdk", "")
     if not api_level_text.isdigit():
@@ -725,6 +957,17 @@ def capture_receipt(
         raise HarnessError(f"unknown matrix slot: {slot_id}")
     if slot["api_level"] not in {0, api_level} or slot["oem"] not in {"any", oem}:
         raise BlockedError(f"device identity does not match slot {slot_id}: oem={oem}, api={api_level}")
+    captured_fields = {
+        "manufacturer": manufacturer,
+        "model": props.get("ro.product.model", ""),
+        "android_release": props.get("ro.build.version.release", ""),
+        "build_fingerprint": props.get("ro.build.fingerprint", ""),
+        "security_patch_level": props.get("ro.build.version.security_patch", ""),
+        "oem_skin": _oem_skin(props),
+    }
+    for field, value in captured_fields.items():
+        if not isinstance(value, str) or value.strip().lower() in _UNKNOWN_LITERALS:
+            raise BlockedError(f"cannot capture exact device identity field: {field}")
 
     width, height = _parse_display(_run_adb(adb, serial, "shell", "wm", "size"))
     density = _parse_density(_run_adb(adb, serial, "shell", "wm", "density"))
@@ -765,6 +1008,8 @@ def capture_receipt(
             "serial_suffix": serial[-4:] if len(serial) >= 4 else serial,
             "authorized": True,
             "authorization_ref": authorization_ref,
+            "is_emulator": False,
+            "transport": _transport_for_serial(serial),
             "webview": webview,
             "display": {"width": width, "height": height, "density": density},
             "input": {
@@ -829,6 +1074,7 @@ def record_test(
         raise BlockedError("cannot record a test without an authorized hardware receipt")
     root = receipt_path.parent.resolve()
     evidence: list[dict[str, str]] = []
+    evidence_redaction_errors: list[str] = []
     for path in evidence_paths:
         resolved = path.resolve()
         try:
@@ -837,7 +1083,15 @@ def record_test(
             raise HarnessError(f"evidence must be under the receipt directory: {path}") from exc
         if not resolved.is_file():
             raise HarnessError(f"evidence does not exist: {path}")
-        evidence.append({"path": relative.as_posix(), "sha256": sha256_file(resolved), "kind": resolved.suffix.lstrip(".") or "file"})
+        data = resolved.read_bytes()
+        evidence_redaction_errors.extend(_evidence_content_findings(data, str(resolved)))
+        evidence.append({
+            "path": relative.as_posix(),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "kind": resolved.suffix.lstrip(".") or "file",
+        })
+    if evidence_redaction_errors:
+        raise HarnessError("redaction: evidence contains secret-like content:\n- " + "\n- ".join(evidence_redaction_errors))
     test = next((item for item in receipt.get("tests", []) if item.get("id") == test_id), None)
     if test is None:
         raise HarnessError(f"receipt has no test id: {test_id}")
@@ -848,7 +1102,7 @@ def record_test(
             "reason": reason,
             "failure_class": failure_class,
             "evidence": evidence,
-            "redaction_checked": True,
+            "redaction_checked": not evidence_redaction_errors,
         }
     )
     if status in {"PASS", "FAIL"}:
@@ -865,13 +1119,25 @@ def record_test(
     return receipt
 
 
-def evaluate_gate(receipts: list[dict[str, Any]], matrix: dict[str, Any]) -> dict[str, Any]:
+def evaluate_gate(
+    receipts: list[dict[str, Any]],
+    matrix: dict[str, Any],
+    *,
+    receipt_roots: list[Path] | None = None,
+) -> dict[str, Any]:
     reasons: list[str] = []
     slot_reports: list[dict[str, Any]] = []
     valid_receipts: dict[str, dict[str, Any]] = {}
     has_fail = False
+    if receipt_roots is None or len(receipt_roots) != len(receipts):
+        reasons.append("receipt evidence roots are required for release-gate validation")
+        receipt_roots = [Path("")] * len(receipts)
     for index, receipt in enumerate(receipts):
-        errors = validate_receipt(receipt, matrix)
+        root = receipt_roots[index]
+        if not root or not root.is_dir():
+            errors = ["receipt evidence root is missing or is not a directory"]
+        else:
+            errors = validate_receipt(receipt, matrix, receipt_root=root, check_evidence=True)
         if errors:
             reasons.extend(f"receipt[{index}]: {error}" for error in errors)
             continue
@@ -903,6 +1169,19 @@ def evaluate_gate(receipts: list[dict[str, Any]], matrix: dict[str, Any]) -> dic
         if receipt["aggregate_status"] != "PASS":
             reasons.append(f"slot {slot['slot_id']} aggregate status is {receipt['aggregate_status']}")
         slot_reports.append({"slot_id": slot["slot_id"], "status": receipt["aggregate_status"], "receipt_id": receipt["receipt_id"]})
+    required_receipts = [
+        valid_receipts[slot["slot_id"]]
+        for slot in matrix["slots"]
+        if slot["required"] and slot["slot_id"] in valid_receipts
+    ]
+    if required_receipts:
+        baseline = artifact_identity(required_receipts[0]["artifact"])
+        for receipt in required_receipts[1:]:
+            if artifact_identity(receipt["artifact"]) != baseline:
+                reasons.append(
+                    "required device receipts have mixed artifact identity; "
+                    f"slot {receipt['device']['slot_id']} does not match the first required receipt"
+                )
     if has_fail:
         status = "FAIL"
     elif reasons:
@@ -934,6 +1213,9 @@ def _command_artifact(args: argparse.Namespace) -> int:
         runtime_source_commit=args.runtime_source_commit,
         payload_id=args.payload_id,
         webui_revision=args.webui_revision,
+        repository=args.repository,
+        owner=args.owner,
+        repo=args.repo,
     )
     _write_json_atomic(Path(args.output), manifest)
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
@@ -995,12 +1277,14 @@ def _command_gate(args: argparse.Namespace) -> int:
     matrix = load_matrix(Path(args.matrix))
     root = Path(args.receipts_dir)
     receipts: list[dict[str, Any]] = []
+    receipt_roots: list[Path] = []
     if root.is_dir():
         for path in sorted(root.glob("*.json")):
             value = load_json(path)
             if value.get("receipt_kind") == RECEIPT_KIND:
                 receipts.append(value)
-    result = evaluate_gate(receipts, matrix)
+                receipt_roots.append(path.parent)
+    result = evaluate_gate(receipts, matrix, receipt_roots=receipt_roots)
     if args.output:
         _write_json_atomic(Path(args.output), result)
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
@@ -1039,6 +1323,10 @@ def _build_parser() -> argparse.ArgumentParser:
     artifact_parser.add_argument("--runtime-source-commit", required=True)
     artifact_parser.add_argument("--payload-id", required=True)
     artifact_parser.add_argument("--webui-revision", required=True)
+    provenance = artifact_parser.add_mutually_exclusive_group()
+    provenance.add_argument("--repository", help="explicit owner/repository provenance")
+    provenance.add_argument("--owner", help="repository owner; pair with --repo")
+    artifact_parser.add_argument("--repo", help="repository name; pair with --owner")
     artifact_parser.set_defaults(handler=_command_artifact)
 
     capture_parser = sub.add_parser("capture", help="capture exact metadata from an authorized ADB device only")

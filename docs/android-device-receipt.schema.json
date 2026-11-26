@@ -87,6 +87,8 @@
         "serial_suffix",
         "authorized",
         "authorization_ref",
+        "is_emulator",
+        "transport",
         "webview",
         "display",
         "input",
@@ -110,6 +112,8 @@
         "serial_suffix": { "type": "string", "minLength": 1, "maxLength": 8 },
         "authorized": { "const": true },
         "authorization_ref": { "type": "string", "minLength": 1 },
+        "is_emulator": { "const": false },
+        "transport": { "type": "string", "enum": ["usb", "tcpip"] },
         "webview": { "$ref": "#/$defs/webview" },
         "display": {
           "type": "object",
@@ -245,7 +249,7 @@
         },
         "status": { "$ref": "#/$defs/status" },
         "observed": { "type": "string" },
-        "reason": { "type": "string" },
+        "reason": { "type": "string", "minLength": 1 },
         "failure_class": {
           "type": ["string", "null"],
           "enum": ["app", "service", "job", "notification", "webview", "network", "oem", "artifact", "device", "operator", "unknown", null]

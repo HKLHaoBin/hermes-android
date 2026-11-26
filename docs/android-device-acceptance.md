@@ -20,6 +20,7 @@ The harness records and gates:
 - exact APK filename, size, SHA-256, application ID, version name/code and signer certificate SHA-256;
 - exact Actions repository/workflow/run/head SHA;
 - exact Hermes runtime version/SHA/source commit/payload ID and WebUI revision;
+- one identical artifact identity across every required device receipt;
 - per-test status, observation, failure class, evidence paths and evidence hashes;
 - redaction state and release-gate eligibility.
 
@@ -28,6 +29,7 @@ The harness does not:
 - install, uninstall, upgrade, downgrade or launch an APK;
 - change package verifier settings, permissions, battery optimization, OEM policy or device state;
 - infer a device from a model name or create a fake device row;
+- accept an emulator, test endpoint, literal `unknown` identity, or incomplete device metadata as real hardware;
 - treat container smoke, static tests, frontend tests or a green APK build as device acceptance;
 - claim hardware results when no authorized device receipt exists.
 
@@ -44,7 +46,7 @@ The existing `scripts/e2e.sh` is not the release harness. In particular, it chan
 | `A15-Xiaomi` | 35 | Xiaomi | `arm64-v8a` | yes |
 | `A16-Google` | 36 | Google | `arm64-v8a` | yes |
 
-`Large-screen` and `OEM-stress` are M1 optional slots for the complete Issue #1 scope. They remain absent until an actual authorized device is assigned. A slot does not contain a model, serial, fingerprint, result, or status.
+`Large-screen` and `OEM-stress` are M1 optional slots for the complete Issue #1 scope. They remain absent until an actual authorized device is assigned. A slot does not contain a model, serial, fingerprint, result, or status. Static validation compares every slot's API/OEM/ABI/tier/required fields with the harness contract; swapping A13/A14 values is invalid even if aggregate API coverage still looks complete.
 
 ## Status semantics
 
@@ -64,7 +66,7 @@ A receipt aggregate is derived from its tests:
 3. otherwise any `NOT RUN` -> `NOT RUN`;
 4. only all `PASS` -> `PASS`.
 
-The gate requires every M0 slot and every test ID to be `PASS`. Missing receipts, duplicate slot receipts, mismatched API/OEM/ABI, invalid identity, `BLOCKED`, `NOT RUN`, missing evidence or hash mismatches are not release-ready states.
+The gate requires every M0 slot and every test ID to be `PASS`. It passes each receipt's `receipt_root` to validation and checks evidence file existence, content redaction and SHA-256 before eligibility. It also requires one identical APK/build/runtime/WebUI/payload artifact identity across all required slots. Missing receipts, duplicate slot receipts, mismatched API/OEM/ABI, invalid identity, `BLOCKED`, `NOT RUN`, missing evidence, hash mismatches or mixed artifacts are not release-ready states.
 
 Failure classes are `app`, `service`, `job`, `notification`, `webview`, `network`, `oem`, `artifact`, `device`, `operator`, and `unknown`.
 
@@ -78,6 +80,7 @@ Device identity includes:
 - `abi`, Android release, API level, build fingerprint and security patch level;
 - `serial_sha256` and a short `serial_suffix`; raw `serial` is forbidden;
 - `authorized=true` and an operator-supplied `authorization_ref`;
+- `is_emulator=false` and a physical `transport` (`usb` or `tcpip`);
 - WebView package, exact version and provider;
 - display width/height/density, default IME, TalkBack state;
 - battery optimization/OEM policy, notification permission and controlled backend ID.
@@ -105,10 +108,11 @@ python3 scripts/android_device_matrix.py artifact-manifest \
   --runtime-sha256 <64-hex-runtime-sha> \
   --runtime-source-commit <40-hex-source-commit> \
   --payload-id <payload-id> \
-  --webui-revision <40-hex-webui-revision>
+  --webui-revision <40-hex-webui-revision> \
+  --repository <owner>/<repository>
 ```
 
-Angle-bracket values above are required evidence inputs, not defaults. Do not replace them with guessed values.
+`--repository` is required; alternatively use `--owner <owner> --repo <repository>`. The harness has no default repository provenance, so it cannot silently record the wrong owner/repository. Angle-bracket values above are required evidence inputs, not defaults. Do not replace them with guessed values.
 
 ## Redaction policy
 
@@ -118,7 +122,7 @@ The receipt may not contain:
 - raw device serials;
 - complete user messages, provider credentials or session contents.
 
-The validator rejects secret-like field names and values, raw `serial`, bearer strings, private-key headers and common credential assignments. The receipt records only `serial_sha256`, `serial_suffix`, authorization reference, structured device state and evidence hashes. Evidence files must be scrubbed before they are referenced. `raw_serial_stored=false`, `secrets_stored=false`, and `patterns_checked=true` are mandatory receipt fields.
+The validator rejects secret-like field names and values, raw `serial`, bearer strings, private-key headers and common credential assignments. It scans both the receipt JSON and the bytes of every evidence file before `record` can write `redaction_checked=true`. The receipt records only `serial_sha256`, `serial_suffix`, authorization reference, structured device state and evidence hashes. Evidence files must be scrubbed before they are referenced. `raw_serial_stored=false`, `secrets_stored=false`, and `patterns_checked=true` are mandatory receipt fields.
 
 ## Hardware capture
 
@@ -135,7 +139,7 @@ python3 scripts/android_device_matrix.py capture \
   --backend-id <controlled-backend-id>
 ```
 
-The command reads only ADB metadata: `getprop`, display size/density, WebView provider, IME/accessibility settings, notification app-op, device-idle summary and airplane-mode state. It does not invoke `adb install`, `am start`, `settings put`, `pm grant`, `cmd deviceidle`, or any package-verifier command.
+The command reads only ADB metadata: `getprop`, display size/density, WebView provider, IME/accessibility settings, notification app-op, device-idle summary and airplane-mode state. It rejects `emulator-*`/test serials, emulator transport, and QEMU properties such as `ro.kernel.qemu`; it also rejects missing or literal-unknown model/release/fingerprint/security-patch/OEM-skin identity. It does not invoke `adb install`, `am start`, `settings put`, `pm grant`, `cmd deviceidle`, or any package-verifier command.
 
 If no authorized online device is present, capture exits with code `2` and writes no receipt. That is the expected blocked behavior in environments without hardware. Multiple online devices require an explicit `--serial`.
 
@@ -149,11 +153,12 @@ python3 scripts/android_device_matrix.py record \
   --test-id <test-id> \
   --status PASS \
   --observed <short-observed-state> \
+  --reason <why-this-status-is-supported> \
   --evidence receipts/<slot-id>/status.json \
   --evidence receipts/<slot-id>/screen.png
 ```
 
-For `FAIL` or `BLOCKED`, provide `--reason` and `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite. Evidence paths are relative in the receipt and are re-hashed by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence.
+Every test record requires a non-empty `--reason`; for `FAIL` or `BLOCKED`, also provide `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite. Evidence paths are relative in the receipt, re-hashed, and content-scanned by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence or whose evidence contains credentials.
 
 Validate one receipt:
 
