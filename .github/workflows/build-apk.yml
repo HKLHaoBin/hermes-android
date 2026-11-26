@@ -36,6 +36,13 @@ jobs:
       - name: Runtime package lock regressions
         run: python3 scripts/test_fetch_payload.py
 
+      - name: Android toolchain contract regressions
+        run: |
+          PYTHONPATH=scripts python3 -m unittest \
+            scripts/test_android_toolchain.py \
+            scripts/test_termux_catalog.py \
+            scripts/test_android_toolchain_source.py
+
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk || true
@@ -71,6 +78,12 @@ jobs:
           echo "runtime: channel=$CHANNEL version=${VERSION:-latest}"
           scripts/ci_run.sh fetch python3 scripts/fetch_payload.py --channel "$CHANNEL" --version "$VERSION" "${EXTRA[@]}" --out build/deb
           cat build/deb/meta.json
+
+      - name: Build the locked Termux ARM64 tool catalog
+        run: |
+          python3 scripts/fetch_termux_catalog.py \
+            --lock toolchain/termux-catalog.lock.json \
+            --out android/app/src/main/assets/toolchain/catalog.json
 
       - name: Inspect runtime layout
         run: |
@@ -127,12 +140,13 @@ jobs:
           scripts/ci_run.sh relocate python3 scripts/relocate_payload.py \
             --deb-root build/deb/root \
             --webui build/webui \
+            --toolchain-catalog android/app/src/main/assets/toolchain/catalog.json \
             --meta build/deb/meta.json \
             --runpath \
             --out build/payload
           mkdir -p android/app/src/main/assets/payload
           cp build/payload/payload.zip build/payload/payload.json android/app/src/main/assets/payload/
-          python3 -c "import json;m=json.load(open('build/payload/payload.json'));print(json.dumps({k:m[k] for k in ('payload_id','launcher','ld_library_path','path','node','cert_file','missing_libs','runpath','file_count','total_bytes','zip_bytes')},indent=1,ensure_ascii=False))" > build/payload-summary.txt
+          python3 -c "import json;m=json.load(open('build/payload/payload.json'));print(json.dumps({k:m[k] for k in ('payload_id','launcher','ld_library_path','path','node','cert_file','toolchain_script','toolchain_catalog','missing_libs','runpath','file_count','total_bytes','zip_bytes')},indent=1,ensure_ascii=False))" > build/payload-summary.txt
           echo "::notice title=payload::$(sed 's/%/%25/g' build/payload-summary.txt | awk '{printf "%s%%0A", $0}')"
 
       - name: Build APK with the persistent release key
@@ -248,4 +262,6 @@ jobs:
           test "$(grep -c ANDROID_IMPORT_IMAGE_OK build/logs/smoke.log)" = 2
           test "$(grep -c ANDROID_RUNTIME_FIXES_OK build/logs/smoke.log)" = 2
           test "$(grep -c ANDROID_RUNTIME_CAPABILITIES_OK build/logs/smoke.log)" = 2
+          test "$(grep -c TOOLCHAIN_INSTALL_OK build/logs/smoke.log)" = 1
+          test "$(grep -c TOOLCHAIN_OK build/logs/smoke.log)" = 2
           echo "::notice title=smoke output::$(tail -n 70 build/logs/smoke.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"

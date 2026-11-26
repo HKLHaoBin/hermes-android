@@ -45,6 +45,7 @@ def main() -> int:
         "HERMES_PYTHON": python,
         "HERMES_PYTHON_SRC_ROOT": repo,
         "HERMES_RUNTIME_DIR": f"{r}/tools",
+        "HERMES_ANDROID_TOOLCHAIN_ROOT": f"{args.files}/tools",
         "HERMES_DASHBOARD_SESSION_TOKEN": args.token,
         "HERMES_ANDROID_APP": "smoke",
     }
@@ -54,6 +55,10 @@ def main() -> int:
         env["HERMES_WEB_DIST"] = f"{r}/{m['web_dist']}"
     if m.get("cert_file"):
         env["SSL_CERT_FILE"] = env["REQUESTS_CA_BUNDLE"] = f"{r}/{m['cert_file']}"
+    if m.get("toolchain_script"):
+        env["HERMES_ANDROID_TOOLCHAIN_SCRIPT"] = f"{r}/{m['toolchain_script']}"
+    if m.get("toolchain_catalog"):
+        env["HERMES_ANDROID_TOOLCHAIN_CATALOG"] = f"{r}/{m['toolchain_catalog']}"
 
     code = ("import os, site, sys; sys.argv[0]='hermes'; "
             "site.addsitedir(os.environ['HERMES_SITE']); "

@@ -29,12 +29,14 @@ object RuntimeEnv {
         val python = "$r/" + launcher.getString("python")
         val repo = "$r/" + launcher.getString("repo")
         val site = "$r/" + launcher.getString("site")
+        val toolchainPath = ToolchainManager.pathEntries(context, "path")
+        val toolchainLd = ToolchainManager.pathEntries(context, "ld_library_path")
         val env = linkedMapOf(
             "HOME" to home.absolutePath,
             "HERMES_HOME" to hermesHome(context).absolutePath,
             "PREFIX" to prefix,
             "TMPDIR" to tmp.absolutePath,
-            "PATH" to (dirs("path") + listOf("/system/bin", "/system/xbin", "/vendor/bin")).joinToString(":"),
+            "PATH" to (toolchainPath + dirs("path") + listOf("/system/bin", "/system/xbin", "/vendor/bin")).joinToString(":"),
             "SHELL" to "/system/bin/sh",
             "TERM" to "xterm-256color",
             "COLORTERM" to "truecolor",
@@ -48,6 +50,7 @@ object RuntimeEnv {
             "HERMES_PYTHON" to python,
             "HERMES_PYTHON_SRC_ROOT" to repo,
             "HERMES_RUNTIME_DIR" to "$r/tools",
+            "HERMES_ANDROID_TOOLCHAIN_ROOT" to ToolchainManager.root(context).absolutePath,
             "HERMES_DASHBOARD_SESSION_TOKEN" to token,
             "HERMES_ANDROID_APP" to BuildConfig.VERSION_NAME,
             // Android keeps its CA store in OpenSSL hashed-directory format.
@@ -57,13 +60,19 @@ object RuntimeEnv {
         // LD_LIBRARY_PATH (what upstream's launcher does); on x86 devices running the
         // payload through ARM translation it would leak into the x86 translator itself.
         if (android.os.Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a") {
-            env["LD_LIBRARY_PATH"] = dirs("ld_library_path").joinToString(":")
+            env["LD_LIBRARY_PATH"] = (toolchainLd + dirs("ld_library_path")).joinToString(":")
         }
         manifest.optString("node").takeIf { it.isNotEmpty() && it != "null" }?.let { env["HERMES_NODE"] = "$r/$it" }
         manifest.optString("web_dist").takeIf { it.isNotEmpty() && it != "null" }?.let { env["HERMES_WEB_DIST"] = "$r/$it" }
         manifest.optString("cert_file").takeIf { it.isNotEmpty() && it != "null" }?.let {
             env["SSL_CERT_FILE"] = "$r/$it"
             env["REQUESTS_CA_BUNDLE"] = "$r/$it"
+        }
+        manifest.optString("toolchain_catalog").takeIf { it.isNotEmpty() && it != "null" }?.let {
+            env["HERMES_ANDROID_TOOLCHAIN_CATALOG"] = "$r/$it"
+        }
+        manifest.optString("toolchain_script").takeIf { it.isNotEmpty() && it != "null" }?.let {
+            env["HERMES_ANDROID_TOOLCHAIN_SCRIPT"] = "$r/$it"
         }
         return env
     }

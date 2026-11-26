@@ -26,7 +26,8 @@ object AssetServer {
         if (!path.startsWith(PREFIX)) return null
         val rel = path.removePrefix(PREFIX).ifEmpty { "index.html" }
         return when (rel) {
-            "status.json" -> json(HermesRuntime.statusJson(includeToken = true).toString())
+            "status.json" -> json(HermesRuntime.statusJson(context, includeToken = true).toString())
+            "toolchain.json" -> json(ToolchainManager.inventoryJson(context).toString())
             "log.json" -> {
                 val n = uri.getQueryParameter("n")?.toIntOrNull()?.coerceIn(1, 2000) ?: 400
                 json(HermesRuntime.logJson(n).toString())

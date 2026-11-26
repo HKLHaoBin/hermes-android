@@ -316,6 +316,8 @@ def main() -> int:
     ap.add_argument("--deb-root", type=Path, required=True)
     ap.add_argument("--web-dist", type=Path, default=None)
     ap.add_argument("--webui", type=Path, default=None)
+    ap.add_argument("--toolchain-catalog", type=Path, default=None,
+                    help="verified Android toolchain catalog to stage with the WebUI")
     ap.add_argument("--meta", type=Path, default=None)
     ap.add_argument("--drop", action="append", default=[],
                     help="payload-relative path to leave out (repeatable)")
@@ -358,6 +360,13 @@ def main() -> int:
     if args.webui:
         shutil.copytree(args.webui, stage / "webui")
         shutil.copy2(Path(__file__).with_name("android_webui.py"), stage / "webui/android_webui.py")
+        if args.toolchain_catalog:
+            if not args.toolchain_catalog.is_file():
+                raise SystemExit(f"toolchain catalog not found: {args.toolchain_catalog}")
+            shutil.copy2(Path(__file__).with_name("android_toolchain.py"), stage / "webui/android_toolchain.py")
+            catalog_path = stage / "webui/toolchain/catalog.json"
+            catalog_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(args.toolchain_catalog, catalog_path)
         from android_runtime_fixes import patch_payload
         patch_payload(stage)
 
@@ -397,6 +406,8 @@ def main() -> int:
         "path": path,
         "cert_file": cert,
         "web_dist": "web_dist" if args.web_dist else None,
+        "toolchain_script": "webui/android_toolchain.py" if args.toolchain_catalog else None,
+        "toolchain_catalog": "webui/toolchain/catalog.json" if args.toolchain_catalog else None,
         "node": next((p for p in (f"tools/node/{NESTED}/bin/node", "tools/node/bin/node") if (stage / p).exists()), None),
         "symlinks": links,
         "executables": executables,

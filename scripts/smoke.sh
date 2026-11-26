@@ -23,6 +23,26 @@ for mode in ld-path runpath-only; do
   "$S/files/run.sh" --exec npm --version 2>&1 | first npm
   "$S/files/run.sh" --exec rg --version 2>&1 | first rg
   "$S/files/run.sh" --exec ffmpeg -version 2>&1 | first ffmpeg
+  if [ "$mode" = ld-path ]; then
+    if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
+        --catalog "$R/webui/toolchain/catalog.json" \
+        --root "$HERMES_ANDROID_TOOLCHAIN_ROOT" install-closure \
+        bash git curl wget tar unzip coreutils findutils > "$S/toolchain-install.json"; then
+      grep -q '"bash"' "$S/toolchain-install.json" && echo TOOLCHAIN_INSTALL_OK || RC=1
+    else
+      echo "== toolchain install log"
+      dump "$S/toolchain-install.json"
+      RC=1
+    fi
+  fi
+  if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
+      --catalog "$R/webui/toolchain/catalog.json" \
+      --root "$HERMES_ANDROID_TOOLCHAIN_ROOT" inventory > "$S/toolchain-$mode.json"; then
+    grep -q '"schema_version": 1' "$S/toolchain-$mode.json" && \
+      grep -q '"bash"' "$S/toolchain-$mode.json" && echo TOOLCHAIN_OK || RC=1
+  else
+    RC=1
+  fi
   "$S/files/run.sh" > "$S/server-$mode.log" 2>&1 &
   PID=$!
   if ! "$S/files/run.sh" --py "$S/smoke_webui.py" "$PORT" "$R"; then

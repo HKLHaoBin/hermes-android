@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "repository": {
+    "name": "termux-main",
+    "base_url": "https://packages.termux.dev/apt/termux-main/",
+    "suite": "stable",
+    "component": "main",
+    "architecture": "aarch64",
+    "inrelease_url": "https://packages.termux.dev/apt/termux-main/dists/stable/InRelease",
+    "packages_index_url": "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz",
+    "inrelease_sha256": "6781d3aaef18fd3575e9b3575da16185e6b0bd8a93812e6355477d09c0618198",
+    "inrelease_size": 14016,
+    "packages_index_sha256": "3e136fc94802d9f7d690c5d3fe3ba14abf0990c313387acff952a70f61b8c298",
+    "packages_index_size": 737286,
+    "key_fingerprint": "CC72CF8BA7DBFA0182877D045A897D96E57CF20C",
+    "keyring_artifact": {
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-keyring/termux-keyring_3.14_all.deb",
+      "filename": "termux-keyring_3.14_all.deb",
+      "sha256": "ff25fc1fa648552ec1349b30f825b983aa65555c1f3bbec87a955dbf189983bb",
+      "size": 44992
+    }
+  },
+  "roots": [
+    "bash",
+    "git",
+    "curl",
+    "wget",
+    "tar",
+    "unzip",
+    "coreutils",
+    "findutils"
+  ]
+}
