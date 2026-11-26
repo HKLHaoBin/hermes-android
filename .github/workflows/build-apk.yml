@@ -36,6 +36,11 @@ jobs:
       - name: Runtime package lock regressions
         run: python3 scripts/test_fetch_payload.py
 
+      - name: Issue #14 device matrix static validation
+        run: |
+          python3 scripts/android_device_matrix.py validate-matrix docs/android-device-matrix.json
+          python3 scripts/test_android_device_matrix.py
+
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost /usr/local/lib/android/sdk/ndk || true

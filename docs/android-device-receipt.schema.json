@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/HKLHaoBin/hermes-android/blob/main/docs/android-device-receipt.schema.json",
+  "title": "Hermes Android Issue #14 device acceptance receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "receipt_kind",
+    "schema_version",
+    "receipt_id",
+    "generated_at",
+    "aggregate_status",
+    "operator",
+    "device",
+    "artifact",
+    "preconditions",
+    "tests",
+    "redaction"
+  ],
+  "properties": {
+    "receipt_kind": { "const": "android-device-acceptance" },
+    "schema_version": { "const": 1 },
+    "receipt_id": { "type": "string", "minLength": 1 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "aggregate_status": { "$ref": "#/$defs/status" },
+    "operator": { "$ref": "#/$defs/operator" },
+    "device": { "$ref": "#/$defs/device" },
+    "artifact": { "$ref": "#/$defs/artifact" },
+    "preconditions": { "$ref": "#/$defs/preconditions" },
+    "tests": {
+      "type": "array",
+      "minItems": 31,
+      "maxItems": 31,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/test" }
+    },
+    "redaction": { "$ref": "#/$defs/redaction" }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "BLOCKED", "NOT RUN"]
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "authorization_ref"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "authorization_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "webview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["package", "version", "provider"],
+      "properties": {
+        "package": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 }
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot_id",
+        "device_id",
+        "manufacturer",
+        "model",
+        "oem",
+        "oem_skin",
+        "abi",
+        "android_release",
+        "api_level",
+        "build_fingerprint",
+        "security_patch_level",
+        "serial_sha256",
+        "serial_suffix",
+        "authorized",
+        "authorization_ref",
+        "webview",
+        "display",
+        "input",
+        "battery",
+        "notification_permission",
+        "network"
+      ],
+      "properties": {
+        "slot_id": { "type": "string", "minLength": 1 },
+        "device_id": { "type": "string", "minLength": 1 },
+        "manufacturer": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "oem": { "type": "string", "minLength": 1 },
+        "oem_skin": { "type": "string", "minLength": 1 },
+        "abi": { "const": "arm64-v8a" },
+        "android_release": { "type": "string", "minLength": 1 },
+        "api_level": { "type": "integer", "enum": [33, 34, 35, 36] },
+        "build_fingerprint": { "type": "string", "minLength": 1 },
+        "security_patch_level": { "type": "string", "minLength": 1 },
+        "serial_sha256": { "$ref": "#/$defs/sha256" },
+        "serial_suffix": { "type": "string", "minLength": 1, "maxLength": 8 },
+        "authorized": { "const": true },
+        "authorization_ref": { "type": "string", "minLength": 1 },
+        "webview": { "$ref": "#/$defs/webview" },
+        "display": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height", "density"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "density": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ime", "talkback"],
+          "properties": {
+            "ime": { "type": "string", "minLength": 1 },
+            "talkback": { "type": "boolean" }
+          }
+        },
+        "battery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["optimization", "oem_policy"],
+          "properties": {
+            "optimization": { "type": "string", "enum": ["optimized", "exempt", "unknown"] },
+            "oem_policy": { "type": "string", "minLength": 1 }
+          }
+        },
+        "notification_permission": {
+          "type": "string",
+          "enum": ["allow", "deny", "default", "unknown"]
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "backend_id"],
+          "properties": {
+            "mode": { "type": "string", "minLength": 1 },
+            "backend_id": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_kind", "schema_version", "apk", "build", "runtime", "webui_revision"],
+      "properties": {
+        "artifact_kind": { "const": "android-build-artifact" },
+        "schema_version": { "const": 1 },
+        "apk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"],
+          "properties": {
+            "filename": { "type": "string", "minLength": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "size_bytes": { "type": "integer", "minimum": 1 },
+            "application_id": { "type": "string", "minLength": 1 },
+            "version_name": { "type": "string", "minLength": 1 },
+            "version_code": { "type": "integer", "minimum": 1 },
+            "signer_sha256": { "$ref": "#/$defs/sha256" }
+          }
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "workflow", "run_id", "head_sha"],
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "workflow": { "type": "string", "minLength": 1 },
+            "run_id": { "type": "string", "pattern": "^[0-9]+$" },
+            "head_sha": { "$ref": "#/$defs/sha1" }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "sha256", "source_commit", "payload_id"],
+          "properties": {
+            "version": { "type": "string", "minLength": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "source_commit": { "$ref": "#/$defs/sha1" },
+            "payload_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "webui_revision": { "$ref": "#/$defs/sha1" }
+      }
+    },
+    "preconditions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"],
+      "properties": {
+        "install_mode": { "type": "string", "minLength": 1 },
+        "notification_permission": { "type": "string", "minLength": 1 },
+        "battery_optimization": { "type": "string", "minLength": 1 },
+        "network_mode": { "type": "string", "minLength": 1 },
+        "screen_state": { "type": "string", "minLength": 1 },
+        "backend_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "kind"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+        },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "kind": { "type": "string", "minLength": 1 }
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "observed", "reason", "failure_class", "evidence", "redaction_checked"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "RD-ID-01", "RD-INSTALL-01", "RD-INSTALL-02", "RD-COLD-01", "RD-UPGRADE-01", "RD-ROLLBACK-01",
+            "RD-RUNTIME-01", "RD-RUNTIME-02", "RD-RUNTIME-03", "RD-RUNTIME-04", "RD-RUNTIME-05", "RD-JOB-01", "RD-JOB-02",
+            "RD-WEB-01", "RD-WEB-02", "RD-STREAM-01", "RD-STREAM-02", "RD-TERM-01",
+            "RD-SAF-01", "RD-SAF-02", "RD-SAF-03", "RD-SAF-04", "RD-SAF-05",
+            "RD-BG-01", "RD-BG-02", "RD-BG-03", "RD-BG-04",
+            "RD-UX-01", "RD-UX-02", "RD-UX-03", "RD-UX-04"
+          ]
+        },
+        "status": { "$ref": "#/$defs/status" },
+        "observed": { "type": "string" },
+        "reason": { "type": "string" },
+        "failure_class": {
+          "type": ["string", "null"],
+          "enum": ["app", "service", "job", "notification", "webview", "network", "oem", "artifact", "device", "operator", "unknown", null]
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/evidence" }
+        },
+        "redaction_checked": { "const": true },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policy_version", "raw_serial_stored", "secrets_stored", "patterns_checked"],
+      "properties": {
+        "policy_version": { "const": "1" },
+        "raw_serial_stored": { "const": false },
+        "secrets_stored": { "const": false },
+        "patterns_checked": { "const": true }
+      }
+    }
+  }
+}
