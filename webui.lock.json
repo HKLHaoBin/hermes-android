@@ -1,0 +1,17 @@
+{
+  "format": 1,
+  "channel": "canary",
+  "repository": "nesquena/hermes-webui",
+  "tag": "exp-v0.52.558",
+  "commit": "21426ee7ffcd620f5e9d53401ee21c4c6dbb9c9d",
+  "runtime": {
+    "channel": "canary",
+    "version": "0.23.2~canary.20261118T064620Z-1",
+    "source_commit": "f7e2898aaefc8f967dbf7345e3999a65672fe60e",
+    "deb_sha256": "47d65ab4fceb5de40ed010bc94ce73ff0ae2b411f8a3587472e909d391e7e793"
+  },
+  "compatibility": {
+    "contract": "android-hermes-runtime-webui-v1",
+    "status": "verified"
+  }
+}

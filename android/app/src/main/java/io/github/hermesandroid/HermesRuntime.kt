@@ -20,6 +20,18 @@ object HermesRuntime {
         val pid: Int = 0,
         val startedAt: Long = 0L,
         val payloadId: String = "",
+        val runtimeChannel: String = "",
+        val runtimeVersion: String = "",
+        val runtimeCommit: String = "",
+        val webuiChannel: String = "",
+        val webuiTag: String = "",
+        val webuiCommit: String = "",
+        val webuiStagedSha256: String = "",
+        val compatibilityStatus: String = "unknown",
+        val activeSlot: String = "",
+        val previousGoodSlot: String = "",
+        val activationPending: Boolean = false,
+        val updateError: String = "",
         val exitCode: Int? = null,
     )
 
@@ -80,6 +92,18 @@ object HermesRuntime {
             put("pid", s.pid)
             put("startedAt", s.startedAt)
             put("payloadId", s.payloadId)
+            put("runtimeChannel", s.runtimeChannel)
+            put("runtimeVersion", s.runtimeVersion)
+            put("runtimeCommit", s.runtimeCommit)
+            put("webuiChannel", s.webuiChannel)
+            put("webuiTag", s.webuiTag)
+            put("webuiCommit", s.webuiCommit)
+            put("webuiStagedSha256", s.webuiStagedSha256)
+            put("compatibilityStatus", s.compatibilityStatus)
+            put("activeSlot", s.activeSlot)
+            put("previousGoodSlot", s.previousGoodSlot)
+            put("activationPending", s.activationPending)
+            put("updateError", s.updateError)
             put("exitCode", s.exitCode ?: JSONObject.NULL)
             put("appVersion", BuildConfig.VERSION_NAME)
             if (includeToken) put("token", s.token)

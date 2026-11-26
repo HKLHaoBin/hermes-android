@@ -14,6 +14,11 @@ on:
         description: 固定运行时版本（Debian 版本号，留空取该渠道最新）
         required: false
         default: ''
+      webui_channel:
+        description: WebUI 渠道（locked = 使用 webui.lock.json 中的不可变 pair）
+        type: choice
+        options: [locked, stable, canary]
+        default: locked
 
 permissions:
   contents: read
@@ -25,6 +30,7 @@ concurrency:
 env:
   CHANNEL_INPUT: ${{ inputs.channel || 'locked' }}
   VERSION_INPUT: ${{ inputs.version || '' }}
+  WEBUI_CHANNEL_INPUT: ${{ inputs.webui_channel || 'locked' }}
 
 jobs:
   apk:
@@ -35,6 +41,17 @@ jobs:
 
       - name: Runtime package lock regressions
         run: python3 scripts/test_fetch_payload.py
+
+      - name: Issue #7 identity, receipt and rollback contract regressions
+        run: |
+          PYTHONPATH=scripts python3 -m unittest \
+            scripts.test_webui_channel \
+            scripts.test_update_receipt \
+            scripts.test_update_receipt_cli \
+            scripts.test_payload_slots \
+            scripts.test_manifest_identity \
+            scripts.test_issue7_source_contract \
+            scripts.test_issue7_static
 
       - name: Free disk space
         run: |
@@ -102,11 +119,37 @@ jobs:
           print(f"deb_version={meta['version']}")
           PY
 
-      - name: Check out pinned public Hermes WebUI
+      - name: Resolve immutable WebUI channel
+        id: webui
+        run: |
+          mkdir -p build
+          if [ "$WEBUI_CHANNEL_INPUT" = locked ]; then
+            python3 scripts/resolve_webui.py resolve --channel locked --lock webui.lock.json --out build/webui-selection.json
+          else
+            git ls-remote --tags https://github.com/nesquena/hermes-webui.git > build/webui-refs.txt
+            python3 scripts/resolve_webui.py resolve --channel "$WEBUI_CHANNEL_INPUT" --lock webui.lock.json --refs build/webui-refs.txt --out build/webui-selection.json
+          fi
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          data = json.load(open("build/webui-selection.json", encoding="utf-8"))
+          runtime = json.load(open("build/deb/meta.json", encoding="utf-8"))
+          if data["channel"] != runtime.get("channel"):
+              raise SystemExit(f"runtime/WebUI channel mismatch: {runtime.get('channel')} != {data['channel']}")
+          locked_runtime = data.get("runtime")
+          if locked_runtime:
+              for key in ("version", "deb_sha256"):
+                  if locked_runtime.get(key) and locked_runtime[key] != runtime.get("version" if key == "version" else "sha256"):
+                      raise SystemExit(f"locked pair runtime {key} differs from fetched runtime")
+          print(f"channel={data['channel']}")
+          print(f"tag={data['tag']}")
+          print(f"commit={data['commit']}")
+          PY
+
+      - name: Check out immutable public Hermes WebUI pair
         uses: actions/checkout@v5
         with:
           repository: nesquena/hermes-webui
-          ref: 21426ee7ffcd620f5e9d53401ee21c4c6dbb9c9d
+          ref: ${{ steps.webui.outputs.commit }}
           path: webui-source
           persist-credentials: false
 
@@ -117,6 +160,7 @@ jobs:
           git -C webui-source archive HEAD LICENSE server.py api static mcp_server.py managed_agent_startup.py bootstrap.py scripts | tar -x -C build/webui
           test -f build/webui/static/index.html
           python3 scripts/stage_android_terminal.py build/webui
+          cp build/webui-selection.json build/webui/ANDROID_WEBUI_SELECTION.json
           git -C webui-source rev-parse HEAD > build/webui/ANDROID_WEBUI_REVISION
 
       - name: Android import frontend regressions with pinned API helper
@@ -127,6 +171,8 @@ jobs:
           scripts/ci_run.sh relocate python3 scripts/relocate_payload.py \
             --deb-root build/deb/root \
             --webui build/webui \
+            --webui-identity build/webui-selection.json \
+            --compatibility compatibility.json \
             --meta build/deb/meta.json \
             --runpath \
             --out build/payload
@@ -177,11 +223,40 @@ jobs:
           mkdir -p dist
           NAME="hermes-android-${{ steps.upstream.outputs.version }}-${{ github.run_number }}.apk"
           cp android/app/build/outputs/apk/release/app-release.apk "dist/$NAME"
-          cp build/payload/payload.json dist/payload.json
+          cp build/payload/payload.json dist/payload-manifest.json
+          python3 scripts/update_receipt.py create \
+            --manifest build/payload/payload.json \
+            --apk "dist/$NAME" \
+            --out dist/update-receipt.json
           cp android/release-cert.sha256 dist/release-cert.sha256
           (cd dist && sha256sum "$NAME" > "$NAME.sha256")
           ls -lh dist
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Sign manifest receipt with the persistent release key
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          HERMES_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_B64" || -z "$HERMES_ANDROID_KEYSTORE_PASSWORD" ]]; then
+            echo '::error::Persistent release signing secrets are required for the update receipt.'
+            exit 1
+          fi
+          umask 077
+          KEYSTORE="$RUNNER_TEMP/hermes-receipt-signing.p12"
+          PRIVATE_KEY="$RUNNER_TEMP/hermes-receipt-signing-key.pem"
+          trap 'rm -f -- "$KEYSTORE" "$PRIVATE_KEY"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          unset KEYSTORE_B64
+          openssl pkcs12 -in "$KEYSTORE" -nocerts -nodes \
+            -passin env:HERMES_ANDROID_KEYSTORE_PASSWORD -out "$PRIVATE_KEY"
+          openssl pkcs12 -in "$KEYSTORE" -clcerts -nokeys \
+            -passin env:HERMES_ANDROID_KEYSTORE_PASSWORD -out dist/update-signing-cert.pem
+          python3 scripts/update_receipt.py sign \
+            --receipt dist/update-receipt.json \
+            --key "$PRIVATE_KEY" \
+            --out dist/update-receipt.sig
+          sha256sum dist/update-receipt.json > dist/update-receipt.json.sha256
 
       - uses: actions/upload-artifact@v5
         with:

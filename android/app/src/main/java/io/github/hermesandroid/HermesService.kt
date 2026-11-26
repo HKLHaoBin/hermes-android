@@ -83,22 +83,36 @@ class HermesService : Service() {
     private fun runRuntime() {
         val installer = PayloadInstaller(this)
         var readyFile: File? = null
+        var recovery = PayloadInstaller.Recovery(false, null)
         try {
+            recovery = installer.recoverPending()
             if (!installer.hasPayload()) {
                 fail("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
                 return
             }
-            val manifest = installer.manifest()
+            val includedManifest = installer.manifest()
+            if (recovery.hadPendingActivation && recovery.restoredPayloadId != null) {
+                val restoredManifest = installer.installedManifest() ?: includedManifest
+                applyManifestIdentity(installer, restoredManifest, "payload-startup-rollback")
+                fail(
+                    "上次运行环境未通过启动检查，已回滚到 ${recovery.restoredPayloadId}",
+                    updateError = "payload-startup-rollback",
+                )
+                return
+            }
+            val manifest = includedManifest
             val payloadId = manifest.getString("payload_id")
-            HermesRuntime.update { it.copy(payloadId = payloadId, exitCode = null) }
+            applyManifestIdentity(installer, manifest)
+            HermesRuntime.update { it.copy(payloadId = payloadId, exitCode = null, updateError = "") }
 
             val swept = ProcUtil.sweep(installer.root.absolutePath)
             if (swept > 0) log("清理了 $swept 个残留进程")
 
             if (installer.needsInstall(manifest)) {
-                val need = manifest.optLong("total_bytes", 0L) + 200L * 1024 * 1024
+                val payloadBytes = manifest.optLong("total_bytes", 0L).coerceAtLeast(0L)
+                val need = payloadBytes * 2L + 200L * 1024 * 1024
                 val free = filesDir.usableSpace
-                if (free in 1 until need) {
+                if (free < need) {
                     fail("存储空间不足：需要约 ${need / 1_000_000} MB，当前可用 ${free / 1_000_000} MB")
                     return
                 }
@@ -106,6 +120,7 @@ class HermesService : Service() {
                 installer.install(manifest) { p, label ->
                     HermesRuntime.update { it.copy(progress = p, message = label) }
                 }
+                applyManifestIdentity(installer, manifest)
                 log("运行环境已安装：$payloadId")
             }
             if (stopping) return
@@ -148,6 +163,8 @@ class HermesService : Service() {
             if (waitHealthy(port, proc, ready)) {
                 val cookie = ready.readText()
                 ready.delete()
+                installer.markHealthy()
+                applyManifestIdentity(installer, manifest)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
                 log("Hermes 已就绪：http://127.0.0.1:$port")
             } else if (!stopping && proc.isAliveCompat()) {
@@ -155,6 +172,18 @@ class HermesService : Service() {
             }
             val code = proc.waitFor()
             pump.join(2000)
+            if (!stopping && installer.activationPending()) {
+                val restored = installer.rollback()
+                applyManifestIdentity(installer, installer.installedManifest() ?: manifest, "payload-startup-rollback")
+                fail(
+                    "新运行环境启动失败，已回滚到 ${restored ?: "空白状态"}",
+                    code,
+                    updateError = "payload-startup-rollback",
+                )
+                process = null
+                pid = 0
+                return
+            }
             process = null
             if (stopping) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", exitCode = code, pid = 0) }
@@ -181,15 +210,51 @@ class HermesService : Service() {
             }
         } catch (t: Throwable) {
             log("错误：${t}")
-            fail(t.message ?: t.toString())
+            if (runCatching { installer.activationPending() }.getOrDefault(false)) {
+                installer.rollback()
+                installer.installedManifest()?.let { applyManifestIdentity(installer, it, "payload-activation-rollback") }
+            }
+            fail(t.message ?: t.toString(), updateError = "payload-activation-failed")
         } finally {
             readyFile?.let { it.delete(); File(it.parentFile, "${it.nameWithoutExtension}.tmp").delete() }
             releaseWakeLock()
         }
     }
 
-    private fun fail(message: String, code: Int? = null) {
-        HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.ERROR, message = message, exitCode = code, pid = 0, progress = -1f) }
+    private fun applyManifestIdentity(installer: PayloadInstaller, manifest: org.json.JSONObject, updateError: String = "") {
+        val runtime = manifest.optJSONObject("runtime")
+        val webui = manifest.optJSONObject("webui")
+        val compatibility = manifest.optJSONObject("compatibility")
+        HermesRuntime.update {
+            it.copy(
+                payloadId = manifest.optString("payload_id"),
+                runtimeChannel = runtime?.optString("channel").orEmpty(),
+                runtimeVersion = runtime?.optString("version").orEmpty(),
+                runtimeCommit = runtime?.optString("source_commit").orEmpty(),
+                webuiChannel = webui?.optString("channel").orEmpty(),
+                webuiTag = webui?.optString("tag").orEmpty(),
+                webuiCommit = webui?.optString("commit").orEmpty(),
+                webuiStagedSha256 = webui?.optString("staged_sha256").orEmpty(),
+                compatibilityStatus = compatibility?.optString("status", "unknown") ?: "unknown",
+                activeSlot = installer.activeSlotId().orEmpty(),
+                previousGoodSlot = installer.previousGoodSlotId().orEmpty(),
+                activationPending = installer.activationPending(),
+                updateError = updateError,
+            )
+        }
+    }
+
+    private fun fail(message: String, code: Int? = null, updateError: String = "") {
+        HermesRuntime.update {
+            it.copy(
+                phase = HermesRuntime.Phase.ERROR,
+                message = message,
+                exitCode = code,
+                pid = 0,
+                progress = -1f,
+                updateError = updateError.ifBlank { it.updateError },
+            )
+        }
     }
 
     private fun waitHealthy(port: Int, proc: java.lang.Process, ready: File): Boolean {

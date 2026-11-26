@@ -1240,6 +1240,14 @@
     $('#st-addr').textContent = status.port ? '127.0.0.1:' + status.port : '—';
     $('#st-pid').textContent = status.pid ? String(status.pid) : '—';
     $('#st-payload').textContent = status.payloadId || '—';
+    const runtime = [status.runtimeChannel, status.runtimeVersion, status.runtimeCommit].filter(Boolean).join(' · ');
+    const webui = [status.webuiChannel, status.webuiTag, status.webuiCommit].filter(Boolean).join(' · ');
+    $('#st-runtime').textContent = runtime || '—';
+    $('#st-webui').textContent = webui || '—';
+    $('#st-compatibility').textContent = status.compatibilityStatus || 'unknown';
+    $('#st-active-slot').textContent = status.activeSlot || '—';
+    $('#st-previous-slot').textContent = status.previousGoodSlot || '—';
+    $('#st-update-error').textContent = status.updateError || (status.activationPending ? '待启动确认' : '—');
     $('#st-app').textContent = status.appVersion || '—';
     $('#st-device').textContent = bridge ? bridge.deviceInfo() : navigator.userAgent;
     const running = status.phase === 'running' || status.phase === 'starting' || status.phase === 'installing';

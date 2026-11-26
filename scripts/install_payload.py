@@ -7,6 +7,7 @@ tree will have when it is used (inside the Android test container).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -23,6 +24,15 @@ def main() -> int:
     args = ap.parse_args()
 
     m = json.loads(args.manifest.read_text())
+    expected_zip_sha256 = (m.get("payload") or {}).get("zip_sha256")
+    if expected_zip_sha256:
+        digest = hashlib.sha256()
+        with args.zip.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        digest = digest.hexdigest()
+        if digest != expected_zip_sha256:
+            raise SystemExit(f"payload zip SHA-256 mismatch: {digest}")
     dest = args.dest
     if dest.exists():
         shutil.rmtree(dest)
@@ -56,6 +66,7 @@ def main() -> int:
         if f.is_file():
             f.chmod(0o755)
     (dest / ".payload_id").write_text(m["payload_id"])
+    (dest / ".payload_manifest.json").write_text(json.dumps(m, sort_keys=True) + "\n")
     print(f"installed {m['payload_id']}: {len(m['rewrite'])} rewritten, "
           f"{len(m['symlinks'])} links, {len(m['executables'])} executables")
     return 0
