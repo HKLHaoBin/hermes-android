@@ -115,12 +115,17 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
         return result
     }
 
-    /** Returns the updated row, or null when the expected state no longer matches. */
+    /**
+     * Returns the updated row, or null when the expected state/revision no longer matches.
+     * [expectedUpdatedAt] is the caller's revision token; a worker must not reread the row
+     * and use a newer attempt's revision when completing an older attempt.
+     */
     @Synchronized
     fun transition(
         profileId: String,
         jobId: String,
         expected: JobState,
+        expectedUpdatedAt: Long,
         next: JobState,
         now: Long = System.currentTimeMillis(),
         error: String? = null,
@@ -131,8 +136,7 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
             expected == JobState.FAILED && next == JobState.QUEUED) {
             return null // Recovery must go through resume() so the retry ceiling is enforced.
         }
-        val current = get(profileId, jobId) ?: return null
-        if (current.state != expected) return null
+        val current = findVersion(profileId, jobId, expected, expectedUpdatedAt) ?: return null
         val effectiveNow = maxOf(now, current.updatedAt + 1)
         val values = ContentValues().apply {
             put("state", next.value)
@@ -152,7 +156,7 @@ class JobLedger(context: Context) : SQLiteOpenHelper(
                 TABLE,
                 values,
                 "job_id = ? AND profile_id = ? AND state = ? AND updated_at = ?",
-                arrayOf(jobId, profileId, expected.value, current.updatedAt.toString()),
+                arrayOf(jobId, profileId, expected.value, expectedUpdatedAt.toString()),
             )
             val result = if (changed == 1) findVersion(profileId, jobId, next, effectiveNow) else null
             db.setTransactionSuccessful()

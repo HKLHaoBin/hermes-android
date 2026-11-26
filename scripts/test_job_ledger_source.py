@@ -31,6 +31,14 @@ class JobLedgerSourceTests(unittest.TestCase):
         self.assertGreaterEqual(self.source.count('updated_at = ?'), 3)
         self.assertIn('private fun findVersion(', self.source)
 
+    def test_transition_requires_caller_revision_token(self):
+        start = self.source.index('fun transition(')
+        end = self.source.index('    /** Resume a paused/failed job', start)
+        transition = self.source[start:end]
+        self.assertIn('expectedUpdatedAt: Long', transition)
+        self.assertIn('findVersion(profileId, jobId, expected, expectedUpdatedAt)', transition)
+        self.assertIn('expectedUpdatedAt.toString()', transition)
+
     def test_recovery_and_retry_guards_are_present(self):
         self.assertIn('private const val MAX_RETRIES = 3', self.source)
         self.assertIn('if (current.retryCount >= MAX_RETRIES)', self.source)
