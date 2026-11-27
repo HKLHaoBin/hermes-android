@@ -55,7 +55,7 @@ jobs:
             scripts.test_issue7_standalone_contract \
             scripts.test_issue7_review_regressions \
             scripts.test_issue7_security_regressions \
-            scripts.test_issue7_smoke_contract
+            scripts.test_issue7_smoke_contract \
             scripts.test_issue7_parent_gate \
             scripts.test_capabilities \
             scripts.test_job_ledger_contract \

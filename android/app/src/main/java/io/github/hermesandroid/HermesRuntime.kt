@@ -32,6 +32,7 @@ object HermesRuntime {
         val previousGoodSlot: String = "",
         val activationPending: Boolean = false,
         val updateError: String = "",
+        val legacyMigrationStatus: String = "",
         val exitCode: Int? = null,
     )
 
@@ -104,6 +105,7 @@ object HermesRuntime {
             put("previousGoodSlot", s.previousGoodSlot)
             put("activationPending", s.activationPending)
             put("updateError", s.updateError)
+            put("legacyMigrationStatus", s.legacyMigrationStatus)
             put("exitCode", s.exitCode ?: JSONObject.NULL)
             put("appVersion", BuildConfig.VERSION_NAME)
             put("androidApi", android.os.Build.VERSION.SDK_INT)

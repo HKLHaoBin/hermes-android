@@ -29,6 +29,8 @@ import kotlin.concurrent.thread
  */
 class HermesService : Service() {
 
+    private enum class Command { START, AUTO_RESTART, STOP, RESTART, DESTROY }
+
     private val lifecycleLock = Any()
     private var worker: Thread? = null
     @Volatile private var process: java.lang.Process? = null
@@ -40,6 +42,9 @@ class HermesService : Service() {
     private var teardownInProgress = false
     private var pendingStart = false
     private var pendingRestart = false
+    private var latestCommand = Command.START
+    private var autoRestartOwnerGeneration: Long? = null
+    private var autoRestartOwner: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val crashTimes = java.util.concurrent.CopyOnWriteArrayList<Long>()
 
@@ -51,19 +56,27 @@ class HermesService : Service() {
         synchronized(lifecycleLock) {
             when (action) {
                 ACTION_STOP -> {
+                    clearAutoRestartLocked()
+                    latestCommand = Command.STOP
                     commandGeneration += 1L
                     requestTeardownLocked(startId, restart = false)
                 }
                 ACTION_RESTART -> {
+                    clearAutoRestartLocked()
+                    latestCommand = Command.RESTART
                     commandGeneration += 1L
                     requestTeardownLocked(startId, restart = true)
                 }
                 else -> {
                     if (stopping || teardownInProgress) {
+                        clearAutoRestartLocked()
+                        latestCommand = Command.START
                         commandGeneration += 1L
                         pendingStart = true
                         activeTeardownGeneration = commandGeneration
                     } else if (worker?.isAlive != true) {
+                        clearAutoRestartLocked()
+                        latestCommand = Command.START
                         commandGeneration += 1L
                         launchLocked()
                     }
@@ -76,7 +89,11 @@ class HermesService : Service() {
     override fun onDestroy() {
         HermesRuntime.removeListener(notifier)
         synchronized(lifecycleLock) {
+            clearAutoRestartLocked()
+            latestCommand = Command.DESTROY
             commandGeneration += 1L
+            pendingStart = false
+            pendingRestart = false
             requestTeardownLocked(0, restart = false, stopSelfWhenDone = false)
         }
         releaseWakeLock()
@@ -98,6 +115,7 @@ class HermesService : Service() {
     }
 
     private fun requestTeardownLocked(startId: Int, restart: Boolean, stopSelfWhenDone: Boolean = true) {
+        clearAutoRestartLocked()
         activeTeardownGeneration = commandGeneration
         teardownStartId = startId
         pendingRestart = restart
@@ -108,6 +126,11 @@ class HermesService : Service() {
         thread(name = if (restart) "hermes-restart" else "hermes-stop") {
             teardownLoop(stopSelfWhenDone)
         }
+    }
+
+    private fun clearAutoRestartLocked() {
+        autoRestartOwnerGeneration = null
+        autoRestartOwner = null
     }
 
     private fun isGenerationCurrent(generation: Long): Boolean = synchronized(lifecycleLock) {
@@ -125,9 +148,13 @@ class HermesService : Service() {
                 generation = activeTeardownGeneration
             }
             stopRuntime(generation)
+            var generationMatched = false
             synchronized(lifecycleLock) {
-                if (generation != activeTeardownGeneration) continue
-                if (pendingStart || pendingRestart) {
+                if (generation == activeTeardownGeneration) {
+                    generationMatched = true
+                }
+                if (generationMatched && (pendingStart || pendingRestart) &&
+                    latestCommand != Command.STOP && latestCommand != Command.DESTROY) {
                     pendingStart = false
                     pendingRestart = false
                     teardownInProgress = false
@@ -136,13 +163,57 @@ class HermesService : Service() {
                     launchLocked()
                     return
                 }
-                teardownInProgress = false
-                stopping = false
-                if (stopSelfWhenDone) {
-                    stopForegroundCompat()
-                    stopSelfResult(teardownStartId)
+                if (generationMatched) {
+                    teardownInProgress = false
+                    stopping = false
+                    if (stopSelfWhenDone && latestCommand != Command.DESTROY) {
+                        stopForegroundCompat()
+                        stopSelfResult(teardownStartId)
+                    }
+                    return
                 }
-                return
+            }
+            // A newer command superseded the teardown while process cleanup ran.
+            // Re-read the active generation outside the synchronized block.
+            continue
+        }
+    }
+
+    private fun scheduleAutoRestart(generation: Long, delayMs: Long) {
+        val failedWorker = Thread.currentThread()
+        synchronized(lifecycleLock) {
+            val ownsFailure = generation == commandGeneration &&
+                (latestCommand == Command.START || latestCommand == Command.AUTO_RESTART) &&
+                !stopping && !teardownInProgress && worker === failedWorker
+            if (ownsFailure) {
+                autoRestartOwnerGeneration = generation
+                autoRestartOwner = failedWorker
+            }
+        }
+        thread(name = "hermes-relaunch") {
+            try {
+                failedWorker.join()
+                Thread.sleep(delayMs)
+            } catch (_: InterruptedException) {
+                synchronized(lifecycleLock) {
+                    if (autoRestartOwnerGeneration == generation && autoRestartOwner === failedWorker) {
+                        clearAutoRestartLocked()
+                    }
+                }
+                return@thread
+            }
+            synchronized(lifecycleLock) {
+                val ownsFailure = autoRestartOwnerGeneration == generation &&
+                    autoRestartOwner === failedWorker && worker === failedWorker &&
+                    !failedWorker.isAlive && commandGeneration == generation &&
+                    (latestCommand == Command.START || latestCommand == Command.AUTO_RESTART) &&
+                    !stopping && !teardownInProgress
+                if (ownsFailure) {
+                    clearAutoRestartLocked()
+                    commandGeneration += 1L
+                    latestCommand = Command.AUTO_RESTART
+                    launchLocked()
+                }
             }
         }
     }
@@ -160,13 +231,20 @@ class HermesService : Service() {
             }
             val includedManifest = installer.manifest()
             if (installer.activeSlotId() == null) quiescePayload(installer.root.absolutePath)
-            installer.migrateLegacy { !isGenerationCurrent(generation) }
+            val legacyResult = installer.migrateLegacy { !isGenerationCurrent(generation) }
+            if (legacyResult == PayloadInstaller.LegacyMigrationResult.NO_TRUSTED_MANIFEST) {
+                log("旧版运行环境缺少可信 manifest/sidecar；本次升级不提供 previous-good fallback")
+            }
             requireGeneration(generation)
             val recovery = installer.recoverPending(::quiescePayload)
             attemptedRoot = installer.root.absolutePath
             val manifest = installer.selectedManifest(includedManifest)
             val usingFallback = manifest.getString("payload_id") != includedManifest.getString("payload_id")
-            val updateError = if (usingFallback) "payload-startup-rollback" else ""
+            val updateError = when {
+                installer.legacyMigrationStatus() == "no-trusted-manifest" -> "legacy-no-fallback"
+                usingFallback -> "payload-startup-rollback"
+                else -> ""
+            }
             if (recovery.hadPendingActivation && recovery.restoredPayloadId != null) {
                 log("上次运行环境未通过启动检查，改用 previous-good：${recovery.restoredPayloadId}")
             } else if (usingFallback) {
@@ -292,16 +370,7 @@ class HermesService : Service() {
                     log("Hermes 进程退出（代码 $code$hint），自动重启（${crashTimes.size}/$MAX_AUTO_RESTARTS）")
                     HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STARTING, message = "正在自动重启…", exitCode = code, pid = 0) }
                     releaseWakeLock()
-                    Thread.sleep(2000L * crashTimes.size)
-                    thread(name = "hermes-relaunch") {
-                        worker?.join()
-                        synchronized(lifecycleLock) {
-                            if (generation != commandGeneration || stopping || teardownInProgress) {
-                                pendingStart = true
-                                activeTeardownGeneration = commandGeneration
-                            } else launchLocked()
-                        }
-                    }
+                    scheduleAutoRestart(generation, 2000L * crashTimes.size)
                     return
                 }
                 fail("Hermes 进程意外退出（代码 $code$hint），请查看日志", code)
@@ -366,6 +435,7 @@ class HermesService : Service() {
                 previousGoodSlot = installer.previousGoodSlotId().orEmpty(),
                 activationPending = installer.activationPending(),
                 updateError = updateError,
+                legacyMigrationStatus = installer.legacyMigrationStatus(),
             )
         }
     }
