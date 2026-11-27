@@ -18,7 +18,7 @@ The package manager uses the app-private root `filesDir/tools`:
 - `catalog.json`: the verified catalog copied from APK assets.
 - `entries/<package>/<version>[-generation]/`: immutable extracted package entries; filesystem-unsafe version characters are percent-encoded in the directory name. Each entry contains a generated `.hermes-package.json` manifest with the catalog version, artifact hash, and declared entrypoints.
 - `.staging/<transaction>/`: disposable extraction staging.
-- `state.json`: the atomic active/previous selection and materialized facts.
+- `state.json`: the authoritative atomic active/previous selection, materialized facts, and current `catalog_id` identity.
 - `active.json` and `previous.json`: query/debug projections only; `state.json` is authoritative and runtime code does not fall back to these files when it is missing or malformed.
 - `facts.json`: PATH and library exports consumed by the Android runtime environment.
 - `.transaction.lock`: a single-writer OS file lock containing a complete owner record; owner-less or malformed records are recoverable only after acquiring the OS lock, never by mtime alone.
@@ -35,7 +35,7 @@ The payload-side `android_toolchain.py` supports `inventory`, `preflight`, `inst
 - The manager never executes archive contents during installation.
 - `update` keeps the old active entry as the previous selection. Reinstalling a version never deletes a path referenced by active or previous state.
 - `remove` removes the selected package and recursively drops dependencies that are no longer referenced by another active package. Immutable entry data remains available for repair/rollback.
-- `rollback` swaps active and previous selections only when every previous entry is present and verified against the current catalog; cross-catalog rollback is rejected before state changes.
+- `rollback` swaps active and previous selections only when every previous entry and its recursive dependency closure are present and verified against the current catalog; cross-catalog rollback is rejected before state changes.
 - Peak-space preflight compares only incremental download/extraction allocation against `free_bytes`; retained active/previous entries are already included in filesystem free-space accounting.
 - Inventory distinguishes `active`, `available`, `blocked`, `unsupported`, `outdated`, and `corrupt`; a catalog declaration is not reported as executable device capability without installed/host evidence.
 
@@ -43,7 +43,7 @@ Android integration
 
 - `/__android/status.json` now contains `capabilitySchemaVersion`, the existing capability IDs, and a `toolchain` inventory object.
 - `/__android/toolchain.json` returns the same machine-readable inventory without the runtime status envelope.
-- `RuntimeEnv.kt` prepends active package PATH/library exports to the sealed base payload and retains explicit `/system/bin`, `/system/xbin`, and `/vendor/bin` fallbacks.
+- `RuntimeEnv.kt` prepends active package PATH/library exports to the sealed base payload and retains explicit `/system/bin`, `/system/xbin`, and `/vendor/bin` fallbacks. Active entry containment uses API-24-compatible canonical `File` paths.
 - The CI smoke launcher installs and validates all Issue #5 default roots, then refreshes the same exports from installed `state.json`/`facts.json` instead of trusting the payload manifest's static paths; command resolution must point into `filesDir/tools/entries`.
 - The relocator stages the manager script and catalog into the payload manifest as `toolchain_script` and `toolchain_catalog`.
 

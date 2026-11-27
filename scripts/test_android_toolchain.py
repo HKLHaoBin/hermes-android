@@ -285,6 +285,43 @@ class AndroidToolchainTests(unittest.TestCase):
         self.assertEqual(restored["active"]["libfoo"]["version"], "1.0.0")
         self.assertEqual(store.inventory(self.host())["active"]["libfoo"]["version"], "1.0.0")
 
+    def test_state_persists_catalog_id_and_rejects_catalog_mismatch(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        store.install("libfoo", lib, self.host())
+        state = json.loads((self.root / "tools" / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["catalog_id"], "test-catalog")
+        updated_doc = catalog.to_dict()
+        updated_doc["catalog_id"] = "different-catalog"
+        mismatched = ToolchainStore(self.root / "tools", Catalog.from_dict(updated_doc))
+        with self.assertRaisesRegex(TransactionError, "catalog identity"):
+            mismatched.inventory(self.host())
+
+    def test_rollback_rejects_previous_dependency_closure_before_commit(self):
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        initial_doc = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        }).to_dict()
+        initial_doc["packages"][1]["dependencies"] = []
+        initial = Catalog.from_dict(initial_doc)
+        store = ToolchainStore(self.root / "tools", initial)
+        store.install("tool", tool, self.host())
+        store.remove("tool")
+
+        updated_doc = initial.to_dict()
+        updated_doc["packages"][1]["dependencies"] = ["libfoo"]
+        updated = ToolchainStore(self.root / "tools", Catalog.from_dict(updated_doc))
+        with self.assertRaisesRegex(TransactionError, "dependency closure"):
+            updated.rollback()
+        self.assertEqual(updated._state()["active"], {})
+
     def test_remove_cascades_unused_dependencies_but_keeps_shared_dependency(self):
         lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
         tool, tool_hash, tool_size = self.archive("tool", "1.0.0")

@@ -183,7 +183,7 @@ object ToolchainManager {
         }
         val entry = File(root(context), relative)
         val packageRoot = File(root(context), "entries/$name")
-        if (!entry.isDirectory || !entry.toPath().normalize().startsWith(packageRoot.toPath().normalize())) {
+        if (!entry.isDirectory || !isWithin(packageRoot, entry)) {
             return SelectionStatus("corrupt", "active entry is missing or outside package slot")
         }
         val manifestFile = File(entry, ".hermes-package.json")
@@ -228,6 +228,15 @@ object ToolchainManager {
             if (left.optString(i) != right.optString(i)) return false
         }
         return true
+    }
+
+    /** Canonical File paths are available on the minSdk 24 runtime. */
+    private fun isWithin(parent: File, child: File): Boolean = try {
+        val parentPath = parent.canonicalPath
+        val childPath = child.canonicalPath
+        childPath == parentPath || childPath.startsWith(parentPath + File.separator)
+    } catch (_: IOException) {
+        false
     }
 
     private fun activeTreeValid(

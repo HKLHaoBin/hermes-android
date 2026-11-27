@@ -47,6 +47,13 @@ for mode in ld-path runpath-only; do
     if [ "$status" -ne 0 ]; then RC=1; fi
   }
   check_exec installed-bash bash --version
+  check_exec git git --version
+  check_exec curl curl --version
+  check_exec wget wget --version
+  check_exec tar tar --version
+  check_exec unzip unzip -v
+  check_exec coreutils ls --version
+  check_exec findutils find --version
   check_exec python python --version
   check_exec node node --version
   check_exec npm npm --version
@@ -66,6 +73,13 @@ for mode in ld-path runpath-only; do
     if [ "$status" -ne 0 ]; then RC=1; fi
   }
   check_tool_path path-bash bash
+  check_tool_path path-git git
+  check_tool_path path-curl curl
+  check_tool_path path-wget wget
+  check_tool_path path-tar tar
+  check_tool_path path-unzip unzip
+  check_tool_path path-coreutils ls
+  check_tool_path path-findutils find
   check_tool_path path-python python
   check_tool_path path-node node
   check_tool_path path-npm npm

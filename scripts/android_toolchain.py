@@ -255,6 +255,9 @@ class Catalog:
     def from_dict(cls, data: dict[str, Any]) -> Catalog:
         if not isinstance(data, dict) or data.get("schema_version") != CATALOG_SCHEMA_VERSION:
             raise CatalogError("unsupported catalog schema")
+        catalog_id = data.get("catalog_id")
+        if not isinstance(catalog_id, str) or not catalog_id:
+            raise CatalogError("missing catalog identity")
         target = data.get("target")
         if not isinstance(target, dict):
             raise CatalogError("missing target")
@@ -457,6 +460,10 @@ class Catalog:
         return dict(self._data["target"])
 
     @property
+    def catalog_id(self) -> str:
+        return self._data["catalog_id"]
+
+    @property
     def repository(self) -> dict[str, Any]:
         return dict(self._data["repository"])
 
@@ -475,9 +482,16 @@ class ToolchainStore:
         self.facts_path = self.root / "facts.json"
 
     def _state(self) -> dict[str, Any]:
-        state = _read_json(self.state_path, {"schema_version": INVENTORY_SCHEMA_VERSION, "active": {}, "previous": {}})
+        state = _read_json(self.state_path, {
+            "schema_version": INVENTORY_SCHEMA_VERSION,
+            "catalog_id": self.catalog.catalog_id,
+            "active": {},
+            "previous": {},
+        })
         if not isinstance(state, dict) or state.get("schema_version") != INVENTORY_SCHEMA_VERSION:
             raise TransactionError("invalid toolchain state schema")
+        if state.get("catalog_id") != self.catalog.catalog_id:
+            raise TransactionError("toolchain state catalog identity mismatch")
         for key in ("active", "previous"):
             if not isinstance(state.get(key), dict):
                 raise TransactionError(f"invalid toolchain state field: {key}")
@@ -927,6 +941,7 @@ class ToolchainStore:
         facts = self._facts(active)
         state = {
             "schema_version": INVENTORY_SCHEMA_VERSION,
+            "catalog_id": self.catalog.catalog_id,
             "operation": operation,
             "active": active,
             "previous": previous,
@@ -1105,6 +1120,8 @@ class ToolchainStore:
                     valid, reason = self._selection_status(name, selected, require_current_version=True)
                     if not valid:
                         raise TransactionError(f"rollback requires the current catalog for {name}: {reason}")
+                    if not self._active_tree_valid(name, previous):
+                        raise TransactionError(f"rollback dependency closure is invalid for {name}")
                 self._commit(previous, state["active"], "rollback")
                 return {"active": previous, "previous": state["active"]}
             finally:
@@ -1162,6 +1179,7 @@ class ToolchainStore:
             })
         return {
             "schema_version": INVENTORY_SCHEMA_VERSION,
+            "catalog_id": self.catalog.catalog_id,
             "catalog_schema_version": CATALOG_SCHEMA_VERSION,
             "target": self.catalog.target,
             "repository": self.catalog.repository,

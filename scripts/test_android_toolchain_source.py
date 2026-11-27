@@ -101,6 +101,9 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn('status.state != "active"', manager)
         self.assertIn("readState", manager)
         self.assertIn("validState", manager)
+        self.assertIn("canonicalPath", manager)
+        self.assertIn("File.separator", manager)
+        self.assertNotIn("toPath()", manager)
         self.assertNotIn('readObject(File(root(context), "active.json"))', manager)
         self.assertNotIn('readObject(File(root(context), "previous.json"))', manager)
 
@@ -117,6 +120,8 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn("installed-bash", self.smoke)
         self.assertIn("TOOLCHAIN_ACTIVE_OK", self.smoke)
         self.assertIn("check_tool_path", self.smoke)
+        for probe in ("path-git", "path-curl", "path-wget", "path-tar", "path-unzip", "path-coreutils", "path-findutils"):
+            self.assertIn(probe, self.smoke)
         self.assertIn("env --shell", self.smoke)
 
     def test_smoke_environment_refreshes_from_installed_toolchain_state(self):
