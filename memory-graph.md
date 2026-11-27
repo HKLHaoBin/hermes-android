@@ -7,6 +7,7 @@
 - Branch: feat/issue-14-device-matrix; existing PR #17.
 - Exact review base: dc1fecfa5bf695bc28faf580105347405e279d21.
 - Prior reviewed candidate: a3c3f122bbcbbc39583fa8a64378d556b4ba1d0e.
+- Implementation commit: 209b91c3f408a4da70865fbc83363a2e9c61ae96; subsequent documentation-only graph update may advance the branch head.
 - Contributor scope is the device acceptance harness, receipt schema, focused static regressions, documentation, and existing workflow static-check wiring. Coordinator/integration worktrees are not writable from this task. No merge is authorized.
 
 ## Contract surfaces
