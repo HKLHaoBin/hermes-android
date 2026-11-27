@@ -45,6 +45,7 @@ def main() -> int:
         "HERMES_PYTHON": python,
         "HERMES_PYTHON_SRC_ROOT": repo,
         "HERMES_RUNTIME_DIR": f"{r}/tools",
+        "HERMES_ANDROID_TOOLCHAIN_ROOT": f"{args.files}/tools",
         "HERMES_DASHBOARD_SESSION_TOKEN": args.token,
         "HERMES_ANDROID_APP": "smoke",
     }
@@ -54,6 +55,10 @@ def main() -> int:
         env["HERMES_WEB_DIST"] = f"{r}/{m['web_dist']}"
     if m.get("cert_file"):
         env["SSL_CERT_FILE"] = env["REQUESTS_CA_BUNDLE"] = f"{r}/{m['cert_file']}"
+    if m.get("toolchain_script"):
+        env["HERMES_ANDROID_TOOLCHAIN_SCRIPT"] = f"{r}/{m['toolchain_script']}"
+    if m.get("toolchain_catalog"):
+        env["HERMES_ANDROID_TOOLCHAIN_CATALOG"] = f"{r}/{m['toolchain_catalog']}"
 
     code = ("import os, site, sys; sys.argv[0]='hermes'; "
             "site.addsitedir(os.environ['HERMES_SITE']); "
@@ -61,6 +66,28 @@ def main() -> int:
     lines = ["#!/system/bin/sh", "unset PYTHONHOME PYTHONSTARTUP LD_PRELOAD"]
     lines += [f"export {k}={shlex.quote(v)}" for k, v in env.items()]
     lines += [f"mkdir -p {shlex.quote(env['HERMES_HOME'])} {shlex.quote(env['TMPDIR'])}", f"cd {shlex.quote(home)}"]
+    if "HERMES_ANDROID_TOOLCHAIN_SCRIPT" in env and "HERMES_ANDROID_TOOLCHAIN_CATALOG" in env:
+        lines.extend([
+            "refresh_toolchain_env() {",
+            '  if [ -n "${HERMES_ANDROID_TOOLCHAIN_SCRIPT:-}" ] && [ -f "$HERMES_ANDROID_TOOLCHAIN_SCRIPT" ]; then',
+            "    _toolchain_exports=$("
+            + shlex.quote(python)
+            + " -P "
+            + shlex.quote(env["HERMES_ANDROID_TOOLCHAIN_SCRIPT"])
+            + " --catalog "
+            + shlex.quote(env["HERMES_ANDROID_TOOLCHAIN_CATALOG"])
+            + " --root "
+            + shlex.quote(env["HERMES_ANDROID_TOOLCHAIN_ROOT"])
+            + " env --shell 2>/dev/null) || _toolchain_exports=",
+            '    if [ -n "$_toolchain_exports" ]; then eval "$_toolchain_exports"; fi',
+            '    if [ -n "${HERMES_ANDROID_TOOLCHAIN_PATH:-}" ]; then export PATH="$HERMES_ANDROID_TOOLCHAIN_PATH:$PATH"; fi',
+            '    if [ -n "${HERMES_ANDROID_TOOLCHAIN_LD_LIBRARY_PATH:-}" ]; then',
+            '      if [ -n "${LD_LIBRARY_PATH:-}" ]; then export LD_LIBRARY_PATH="$HERMES_ANDROID_TOOLCHAIN_LD_LIBRARY_PATH:$LD_LIBRARY_PATH"; else export LD_LIBRARY_PATH="$HERMES_ANDROID_TOOLCHAIN_LD_LIBRARY_PATH"; fi',
+            "    fi",
+            "  fi",
+            "}",
+            "refresh_toolchain_env",
+        ])
     lines.append('if [ -n "$NO_LD_LIBRARY_PATH" ]; then unset LD_LIBRARY_PATH; fi')
     lines.append('if [ "$1" = "--exec" ]; then shift; exec "$@"; fi')
     lines.append('if [ "$1" = "--py" ]; then shift; exec ' + shlex.quote(python) + ' "$@"; fi')

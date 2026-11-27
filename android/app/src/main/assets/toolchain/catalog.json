@@ -1,0 +1,4845 @@
+{
+  "schema_version": 1,
+  "catalog_id": "termux-main-aarch64-d8493ce8d4d7",
+  "target": {
+    "triple": "linux-arm64-bionic",
+    "abi": "arm64-v8a",
+    "min_sdk": 24,
+    "libc": "bionic"
+  },
+  "repository": {
+    "name": "termux-main",
+    "base_url": "https://packages.termux.dev/apt/termux-main/",
+    "suite": "stable",
+    "component": "main",
+    "architecture": "aarch64",
+    "inrelease_sha256": "d8493ce8d4d7212718dbbfffecd9069561397a9f804245fdecd2f75961df5198",
+    "inrelease_size": 14016,
+    "packages_index_sha256": "b4aaef0793c95ceec55c043495e4f4fcf25a8aaa86ddd2cef6a8bf8eaba70c42",
+    "packages_index_size": 735432,
+    "key_fingerprint": "CC72CF8BA7DBFA0182877D045A897D96E57CF20C",
+    "keyring_artifact": {
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-keyring/termux-keyring_3.14_all.deb",
+      "filename": "termux-keyring_3.14_all.deb",
+      "sha256": "ff25fc1fa648552ec1349b30f825b983aa65555c1f3bbec87a955dbf189983bb",
+      "size": 44992
+    },
+    "signature": {
+      "type": "openpgp-inrelease",
+      "status": "verified",
+      "verified_by": "gpgv"
+    }
+  },
+  "packages": [
+    {
+      "name": "bash",
+      "version": "5.3.20",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libiconv",
+        "readline",
+        "termux-tools"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "bash",
+        "homepage": "https://www.gnu.org/software/bash/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/bash"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 4849664,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/b/bash/bash_5.3.20_aarch64.deb",
+        "filename": "bash_5.3.20_aarch64.deb",
+        "sha256": "26b5b3ab5b0ac0e3b372ac1e7ddd89270519c1eb25b88fe4175485c2de8086b2",
+        "size": 956852
+      }
+    },
+    {
+      "name": "libandroid-support",
+      "version": "29-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libandroid-support",
+        "homepage": "https://github.com/termux/libandroid-support"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 77824,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-support/libandroid-support_29-1_aarch64.deb",
+        "filename": "libandroid-support_29-1_aarch64.deb",
+        "sha256": "f2f145d6135ad4843ac9670153be3e3944dc1e6f1736d46d2306c28f2b86f517",
+        "size": 10880
+      }
+    },
+    {
+      "name": "libiconv",
+      "version": "1.19.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libiconv",
+        "homepage": "https://www.gnu.org/software/libiconv/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1249280,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libiconv/libiconv_1.19.1_aarch64.deb",
+        "filename": "libiconv_1.19.1_aarch64.deb",
+        "sha256": "a1c6323eff4f660e16ae6f5832356444b3269c19a4f61146355a49e7c4be5ed1",
+        "size": 562252
+      }
+    },
+    {
+      "name": "readline",
+      "version": "8.3.6",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "ncurses"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "readline",
+        "homepage": "https://tiswww.case.edu/php/chet/readline/rltop.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1978368,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/r/readline/readline_8.3.6_aarch64.deb",
+        "filename": "readline_8.3.6_aarch64.deb",
+        "sha256": "616cc73009bc0223f61caed8dd09455714455aa5ea5e180126e2f69c4c775136",
+        "size": 294164
+      }
+    },
+    {
+      "name": "ncurses",
+      "version": "6.6.20260307+really6.5.20250830",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "ncurses",
+        "homepage": "https://invisible-island.net/ncurses/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1642496,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/ncurses/ncurses_6.6.20260307+really6.5.20250830_aarch64.deb",
+        "filename": "ncurses_6.6.20260307+really6.5.20250830_aarch64.deb",
+        "sha256": "f44bbfdc3d42ec0217bffa978309390e59cea5a48a9a83226d4a496c42ad0b99",
+        "size": 557792
+      }
+    },
+    {
+      "name": "termux-tools",
+      "version": "1.46.0+really1.45.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "bzip2",
+        "coreutils",
+        "curl",
+        "dash",
+        "diffutils",
+        "findutils",
+        "gawk",
+        "grep",
+        "gzip",
+        "less",
+        "procps",
+        "psmisc",
+        "sed",
+        "tar",
+        "termux-am",
+        "termux-am-socket",
+        "termux-core",
+        "termux-exec",
+        "util-linux",
+        "xz-utils",
+        "dialog"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "termux-tools",
+        "homepage": "https://termux.dev/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/termux-info"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 565248,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-tools/termux-tools_1.46.0+really1.45.0-1_aarch64.deb",
+        "filename": "termux-tools_1.46.0+really1.45.0-1_aarch64.deb",
+        "sha256": "970fb05a835169f218ea73479eda0f2574f5f70c2af54119f42f77e97cee98e1",
+        "size": 33592
+      }
+    },
+    {
+      "name": "bzip2",
+      "version": "1.0.8-8",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libbz2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "bzip2",
+        "homepage": "http://www.bzip.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 122880,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/b/bzip2/bzip2_1.0.8-8_aarch64.deb",
+        "filename": "bzip2_1.0.8-8_aarch64.deb",
+        "sha256": "7b904d820c34b6c043067ca3c8cb67465413ea5eae3f529a0e05a9ae0df2b89a",
+        "size": 26152
+      }
+    },
+    {
+      "name": "libbz2",
+      "version": "1.0.8-8",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libbz2",
+        "homepage": "http://www.bzip.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 110592,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libb/libbz2/libbz2_1.0.8-8_aarch64.deb",
+        "filename": "libbz2_1.0.8-8_aarch64.deb",
+        "sha256": "4335d7f060650b0aabef545d1334c2f9f280223d5962e13c24a00ec934b794ba",
+        "size": 26116
+      }
+    },
+    {
+      "name": "coreutils",
+      "version": "9.12",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-selinux",
+        "libandroid-support",
+        "libgmp",
+        "libiconv",
+        "openssl"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "coreutils",
+        "homepage": "https://www.gnu.org/software/coreutils/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/ls"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2928640,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/c/coreutils/coreutils_9.12_aarch64.deb",
+        "filename": "coreutils_9.12_aarch64.deb",
+        "sha256": "bedfe9e57f6867232e8f5fee947efa23be20332c57e92d843b3ea155545d6b8b",
+        "size": 824156
+      }
+    },
+    {
+      "name": "libandroid-selinux",
+      "version": "14.0.0.11-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "pcre2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libandroid-selinux",
+        "homepage": "https://selinuxproject.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 315392,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-selinux/libandroid-selinux_14.0.0.11-2_aarch64.deb",
+        "filename": "libandroid-selinux_14.0.0.11-2_aarch64.deb",
+        "sha256": "bd12262a7adbad8b827a9ac9d43576e9eb5ecf419abb5ba4cc4ba48a20b6b7b7",
+        "size": 59252
+      }
+    },
+    {
+      "name": "pcre2",
+      "version": "10.49",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "pcre2",
+        "homepage": "https://pcre2project.github.io/pcre2/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 4538368,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/pcre2/pcre2_10.49_aarch64.deb",
+        "filename": "pcre2_10.49_aarch64.deb",
+        "sha256": "c27995e5f52b8ecc9b8b3e662eb08e49f82a18bfd3f34343936acc7b23964724",
+        "size": 1001320
+      }
+    },
+    {
+      "name": "libgmp",
+      "version": "6.3.0-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libgmp",
+        "homepage": "https://gmplib.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1269760,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libg/libgmp/libgmp_6.3.0-2_aarch64.deb",
+        "filename": "libgmp_6.3.0-2_aarch64.deb",
+        "sha256": "5a3c1325638946ca212ddcb89bffb2c4459b4c90757d6e69f820e176534037fa",
+        "size": 328368
+      }
+    },
+    {
+      "name": "libc++",
+      "version": "30",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libc++",
+        "homepage": "https://libcxx.llvm.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1466368,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libc/libc++/libc++_30_aarch64.deb",
+        "filename": "libc++_30_aarch64.deb",
+        "sha256": "53d0b84a7ba7459024257cb94d5b136fe13ef858567f65a8064b35950799f2ca",
+        "size": 341604
+      }
+    },
+    {
+      "name": "openssl",
+      "version": "1:3.6.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "ca-certificates",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "openssl",
+        "homepage": "https://www.openssl.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 8736768,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/o/openssl/openssl_1:3.6.5_aarch64.deb",
+        "filename": "openssl_1:3.6.5_aarch64.deb",
+        "sha256": "a2fb7856875e63ef6b90442752e05974813372c3ca86d2513a78ea43c67a0f8b",
+        "size": 2482764
+      }
+    },
+    {
+      "name": "ca-certificates",
+      "version": "1:2026.11.05-1",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "ca-certificates",
+        "homepage": "https://curl.se/docs/caextract.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 245760,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/c/ca-certificates/ca-certificates_1:2026.11.05-1_all.deb",
+        "filename": "ca-certificates_1:2026.11.05-1_all.deb",
+        "sha256": "12fc350fc5ad638338b06b04835bce897615f8c93f96d30ac396cdb39b850c6b",
+        "size": 110148
+      }
+    },
+    {
+      "name": "zlib",
+      "version": "1.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "zlib",
+        "homepage": "https://www.zlib.net/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 274432,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/z/zlib/zlib_1.4_aarch64.deb",
+        "filename": "zlib_1.4_aarch64.deb",
+        "sha256": "e3027565ae50bcd8ba5113c988b589754ae192c9cc3e6afbe3e4ed7c06b2598e",
+        "size": 63780
+      }
+    },
+    {
+      "name": "curl",
+      "version": "8.23.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libcurl"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "curl",
+        "homepage": "https://curl.se/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/curl"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 438272,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/c/curl/curl_8.23.0_aarch64.deb",
+        "filename": "curl_8.23.0_aarch64.deb",
+        "sha256": "e57a9975a828eb48790bec0da950795af165aa714f6a33d266c45a4e2898aa85",
+        "size": 246160
+      }
+    },
+    {
+      "name": "libcurl",
+      "version": "8.23.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libnghttp2",
+        "libnghttp3",
+        "libngtcp2",
+        "libssh2",
+        "openssl",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libcurl",
+        "homepage": "https://curl.se/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 3641344,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libc/libcurl/libcurl_8.23.0_aarch64.deb",
+        "filename": "libcurl_8.23.0_aarch64.deb",
+        "sha256": "2011bb9709261bb3d5ecaa6672faa333be14cf48ad4af37031e3e365309557ac",
+        "size": 1043340
+      }
+    },
+    {
+      "name": "libnghttp2",
+      "version": "1.71.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libnghttp2",
+        "homepage": "https://nghttp2.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 532480,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libn/libnghttp2/libnghttp2_1.71.0_aarch64.deb",
+        "filename": "libnghttp2_1.71.0_aarch64.deb",
+        "sha256": "ae33e7b21e0636be8686b9b13a20e31267f047f69cb26b4befd70c9a9bae221e",
+        "size": 96396
+      }
+    },
+    {
+      "name": "libnghttp3",
+      "version": "1.19.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libnghttp3",
+        "homepage": "https://nghttp2.org/nghttp3/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 356352,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libn/libnghttp3/libnghttp3_1.19.0_aarch64.deb",
+        "filename": "libnghttp3_1.19.0_aarch64.deb",
+        "sha256": "8bb6fa31f9281cd48047ec9a571cadf153538f5b38f0203ad7a4e221344b14a6",
+        "size": 69948
+      }
+    },
+    {
+      "name": "libngtcp2",
+      "version": "1.26.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "openssl"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libngtcp2",
+        "homepage": "https://github.com/ngtcp2/ngtcp2"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 815104,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libn/libngtcp2/libngtcp2_1.26.0_aarch64.deb",
+        "filename": "libngtcp2_1.26.0_aarch64.deb",
+        "sha256": "8225ecde58104ef5aa234fa54a1bea5051a8a9ef2937e5ba996b3e8dda68c8eb",
+        "size": 175116
+      }
+    },
+    {
+      "name": "libssh2",
+      "version": "1.11.1-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "openssl",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libssh2",
+        "homepage": "https://www.libssh2.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1179648,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libssh2/libssh2_1.11.1-2_aarch64.deb",
+        "filename": "libssh2_1.11.1-2_aarch64.deb",
+        "sha256": "1add4e0a926b848814e7e2f1817ea28b123c54cabd5bbc4e5cfd65291cbad84e",
+        "size": 219220
+      }
+    },
+    {
+      "name": "dash",
+      "version": "0.5.13.6",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "dash",
+        "homepage": "http://gondor.apana.org.au/~herbert/dash/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 196608,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/d/dash/dash_0.5.13.6_aarch64.deb",
+        "filename": "dash_0.5.13.6_aarch64.deb",
+        "sha256": "92c970951a9e9720ad604398a0ee927830885ecfd47f4a77243934e268ce4bf7",
+        "size": 70672
+      }
+    },
+    {
+      "name": "diffutils",
+      "version": "3.12-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libiconv"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "diffutils",
+        "homepage": "https://www.gnu.org/software/diffutils/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 684032,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/d/diffutils/diffutils_3.12-2_aarch64.deb",
+        "filename": "diffutils_3.12-2_aarch64.deb",
+        "sha256": "ab039ac163550ebb73a601f104da2dfb8bbd26f028086821c48edaa2384e68d2",
+        "size": 162672
+      }
+    },
+    {
+      "name": "findutils",
+      "version": "4.11.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "findutils",
+        "homepage": "https://www.gnu.org/software/findutils/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/find"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 987136,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/findutils/findutils_4.11.0_aarch64.deb",
+        "filename": "findutils_4.11.0_aarch64.deb",
+        "sha256": "6922198895b41394aad417b9793c3bc9b336a4d83bae310346fc1a2ca97abbd3",
+        "size": 260932
+      }
+    },
+    {
+      "name": "gawk",
+      "version": "5.4.2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libgmp",
+        "libmpfr",
+        "readline"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "gawk",
+        "homepage": "https://www.gnu.org/software/gawk/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 3940352,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/gawk/gawk_5.4.2_aarch64.deb",
+        "filename": "gawk_5.4.2_aarch64.deb",
+        "sha256": "4db0c3143544f8868beee8e32fcda5259684bf67cb3802dd45486c3d2d58e272",
+        "size": 928612
+      }
+    },
+    {
+      "name": "libmpfr",
+      "version": "4.2.2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libgmp"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libmpfr",
+        "homepage": "https://www.mpfr.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1028096,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libm/libmpfr/libmpfr_4.2.2_aarch64.deb",
+        "filename": "libmpfr_4.2.2_aarch64.deb",
+        "sha256": "bd2a18f433321d7be49a4e86248696c0551a8df273b2a7c34ce729abe48ce15d",
+        "size": 273848
+      }
+    },
+    {
+      "name": "grep",
+      "version": "3.12-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "pcre2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "grep",
+        "homepage": "https://www.gnu.org/software/grep/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 466944,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/grep/grep_3.12-3_aarch64.deb",
+        "filename": "grep_3.12-3_aarch64.deb",
+        "sha256": "a2819b49c621b61567e39c5c647d5ed6fe9d51eab71ed73eebf18be76719457d",
+        "size": 128312
+      }
+    },
+    {
+      "name": "gzip",
+      "version": "1.15",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "gzip",
+        "homepage": "https://www.gnu.org/software/gzip/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 303104,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/gzip/gzip_1.15_aarch64.deb",
+        "filename": "gzip_1.15_aarch64.deb",
+        "sha256": "0c9806c03dedf51a753f1dc7d93e016fb9e6c8d522d0b1418fd2209244985c84",
+        "size": 75552
+      }
+    },
+    {
+      "name": "less",
+      "version": "710",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "ncurses",
+        "pcre2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "less",
+        "homepage": "https://www.greenwoodsoftware.com/less/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 430080,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/l/less/less_710_aarch64.deb",
+        "filename": "less_710_aarch64.deb",
+        "sha256": "bff261b48553bcde3a93e0d7c2a51dbb1b7e5025767a1ee9a1cb4459a3789499",
+        "size": 143624
+      }
+    },
+    {
+      "name": "procps",
+      "version": "4.0.7-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-glob",
+        "libandroid-support",
+        "ncurses"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "procps",
+        "homepage": "https://gitlab.com/procps-ng/procps"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 933888,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/procps/procps_4.0.7-2_aarch64.deb",
+        "filename": "procps_4.0.7-2_aarch64.deb",
+        "sha256": "4dbc101282481bba10499c1f449bcf8d6ae2986872155dc09b643a70326fa1ad",
+        "size": 226136
+      }
+    },
+    {
+      "name": "libandroid-glob",
+      "version": "0.6-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libandroid-glob",
+        "homepage": "https://man7.org/linux/man-pages/man3/glob.3.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 65536,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-glob/libandroid-glob_0.6-3_aarch64.deb",
+        "filename": "libandroid-glob_0.6-3_aarch64.deb",
+        "sha256": "2276ae8adedf0db76c2f4ffc94cc4cceb2f4f5d78e021b54e2e046d1233e7826",
+        "size": 7032
+      }
+    },
+    {
+      "name": "psmisc",
+      "version": "23.7-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "ncurses"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "psmisc",
+        "homepage": "https://gitlab.com/psmisc/psmisc"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 188416,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/psmisc/psmisc_23.7-1_aarch64.deb",
+        "filename": "psmisc_23.7-1_aarch64.deb",
+        "sha256": "99d0db5ba934e7fa38e33bebbda82c78be59b90e4ba85a74a6dabc3d5b5939b0",
+        "size": 41188
+      }
+    },
+    {
+      "name": "sed",
+      "version": "4.10",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "sed",
+        "homepage": "https://www.gnu.org/software/sed/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 487424,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/s/sed/sed_4.10_aarch64.deb",
+        "filename": "sed_4.10_aarch64.deb",
+        "sha256": "9c514efdb527b5daef2d754fdbddd783f4c1e89382f1b56781120d1da99cee80",
+        "size": 123312
+      }
+    },
+    {
+      "name": "tar",
+      "version": "1.35-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libacl",
+        "libandroid-glob",
+        "libandroid-selinux",
+        "libiconv"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "tar",
+        "homepage": "https://www.gnu.org/software/tar/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/tar"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1298432,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/tar/tar_1.35-3_aarch64.deb",
+        "filename": "tar_1.35-3_aarch64.deb",
+        "sha256": "a3847bc259b8654f621d36fa6345b1d6e93932e60e315e526eac2e3ecc5549ec",
+        "size": 345636
+      }
+    },
+    {
+      "name": "libacl",
+      "version": "2.4.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "attr"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libacl",
+        "homepage": "http://savannah.nongnu.org/projects/acl"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 479232,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libacl/libacl_2.4.0_aarch64.deb",
+        "filename": "libacl_2.4.0_aarch64.deb",
+        "sha256": "cb620e33405e74b566cb05740dca488705cf0c475ec7f795fa333412211b6d92",
+        "size": 123540
+      }
+    },
+    {
+      "name": "attr",
+      "version": "2.6.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "attr",
+        "homepage": "http://savannah.nongnu.org/projects/attr/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 270336,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/a/attr/attr_2.6.0_aarch64.deb",
+        "filename": "attr_2.6.0_aarch64.deb",
+        "sha256": "50a4d1238564a49985d398061ef61a0020348ddc84bd296e6450c5f0bdca2435",
+        "size": 56188
+      }
+    },
+    {
+      "name": "termux-am",
+      "version": "0.8.1",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "termux-am",
+        "homepage": "https://github.com/termux/TermuxAm"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 634880,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-am/termux-am_0.8.1_all.deb",
+        "filename": "termux-am_0.8.1_all.deb",
+        "sha256": "ee7eed85ec45fbccc6f462578f0d40f5899422fe202d1d68942334a018364cba",
+        "size": 575784
+      }
+    },
+    {
+      "name": "termux-am-socket",
+      "version": "1.5.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "termux-am-socket",
+        "homepage": "https://github.com/termux/termux-am-socket"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 90112,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-am-socket/termux-am-socket_1.5.0-1_aarch64.deb",
+        "filename": "termux-am-socket_1.5.0-1_aarch64.deb",
+        "sha256": "dcf53ccb7e1ac46d50e1de9d5e182b748157ba53fbaf47e7a2d50d78447c550b",
+        "size": 16132
+      }
+    },
+    {
+      "name": "termux-core",
+      "version": "0.4.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "termux-core",
+        "homepage": "https://github.com/termux/termux-core-package"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2002944,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-core/termux-core_0.4.0-1_aarch64.deb",
+        "filename": "termux-core_0.4.0-1_aarch64.deb",
+        "sha256": "4f809d70eff0afa8c1beccbf4b5f65e0f59207867462a3a2f66b3e2fcd64b057",
+        "size": 198224
+      }
+    },
+    {
+      "name": "termux-exec",
+      "version": "1:2.5.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "termux-exec",
+        "homepage": "https://github.com/termux/termux-exec-package"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2142208,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-exec/termux-exec_1:2.5.0-1_aarch64.deb",
+        "filename": "termux-exec_1:2.5.0-1_aarch64.deb",
+        "sha256": "fd6a06a6a74c6fba2d1cec56dc8b5726e6488918322b06fd19fe5cff34b28a5d",
+        "size": 287356
+      }
+    },
+    {
+      "name": "util-linux",
+      "version": "2.42.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-glob",
+        "libandroid-posix-semaphore",
+        "libcap-ng",
+        "libsmartcols",
+        "ncurses",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "util-linux",
+        "homepage": "https://en.wikipedia.org/wiki/Util-linux"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 4665344,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/util-linux/util-linux_2.42.4_aarch64.deb",
+        "filename": "util-linux_2.42.4_aarch64.deb",
+        "sha256": "c670b2ef280c2be220c720faff335da2e91de95deddaeffecd482392e4d781a1",
+        "size": 779936
+      }
+    },
+    {
+      "name": "libandroid-posix-semaphore",
+      "version": "0.1-4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libandroid-posix-semaphore",
+        "homepage": "https://man7.org/linux/man-pages/man7/sem_overview.7.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 53248,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-posix-semaphore/libandroid-posix-semaphore_0.1-4_aarch64.deb",
+        "filename": "libandroid-posix-semaphore_0.1-4_aarch64.deb",
+        "sha256": "0efa8677a0166315ba4e685863712eba0ca0a1732827492f38226e2723730c7a",
+        "size": 4076
+      }
+    },
+    {
+      "name": "libcap-ng",
+      "version": "2:0.9.6",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libcap-ng",
+        "homepage": "https://people.redhat.com/sgrubb/libcap-ng/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 315392,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libc/libcap-ng/libcap-ng_2:0.9.6_aarch64.deb",
+        "filename": "libcap-ng_2:0.9.6_aarch64.deb",
+        "sha256": "68e8e2a95e5ac061e40717654fe2014042d88bfa2b85455713ed992eb694f89d",
+        "size": 57472
+      }
+    },
+    {
+      "name": "libsmartcols",
+      "version": "2.42.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-posix-semaphore"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libsmartcols",
+        "homepage": "https://en.wikipedia.org/wiki/Util-linux"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 344064,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsmartcols/libsmartcols_2.42.4_aarch64.deb",
+        "filename": "libsmartcols_2.42.4_aarch64.deb",
+        "sha256": "ee0bed102b2262e443d7f54c78f672b8c11cb0f78b982ed093dd92e73a683e84",
+        "size": 103904
+      }
+    },
+    {
+      "name": "xz-utils",
+      "version": "5.8.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "liblzma"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "xz-utils",
+        "homepage": "https://tukaani.org/xz/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 233472,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/x/xz-utils/xz-utils_5.8.4_aarch64.deb",
+        "filename": "xz-utils_5.8.4_aarch64.deb",
+        "sha256": "c26e35d5393d4ad59d7bfbac93570d418996e69bc160458bee0e165844ae56e8",
+        "size": 71352
+      }
+    },
+    {
+      "name": "liblzma",
+      "version": "5.8.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "liblzma",
+        "homepage": "https://tukaani.org/xz/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 892928,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libl/liblzma/liblzma_5.8.4_aarch64.deb",
+        "filename": "liblzma_5.8.4_aarch64.deb",
+        "sha256": "44e95e6e60dddb3705e60a344a4f009a1085a210797342b721eaff41b44033c0",
+        "size": 194796
+      }
+    },
+    {
+      "name": "dialog",
+      "version": "1.3-20260721-0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "ncurses"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "dialog",
+        "homepage": "https://invisible-island.net/dialog/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 282624,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/d/dialog/dialog_1.3-20260721-0_aarch64.deb",
+        "filename": "dialog_1.3-20260721-0_aarch64.deb",
+        "sha256": "f7c96ea214b33652b8e2b3e2f2797dbc0371be5cac5dfe341c57c0a4927bdd78",
+        "size": 100700
+      }
+    },
+    {
+      "name": "git",
+      "version": "2.56.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libcurl",
+        "libexpat",
+        "libiconv",
+        "less",
+        "openssl",
+        "pcre2",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "git",
+        "homepage": "https://git-scm.com/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/git"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 25690112,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/git/git_2.56.1_aarch64.deb",
+        "filename": "git_2.56.1_aarch64.deb",
+        "sha256": "3343f56fc99e2f0631a553a39789769495435cb07b6ffb3c71a7fcb7bd561e95",
+        "size": 4566396
+      }
+    },
+    {
+      "name": "libexpat",
+      "version": "2.11.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libexpat",
+        "homepage": "https://libexpat.github.io/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 446464,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libe/libexpat/libexpat_2.11.0_aarch64.deb",
+        "filename": "libexpat_2.11.0_aarch64.deb",
+        "sha256": "ac744cb7cd047997da4410ca11d356ca9c952aa474b14a0032414d5677e0fbf1",
+        "size": 106144
+      }
+    },
+    {
+      "name": "wget",
+      "version": "1.25.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libiconv",
+        "libidn2",
+        "libuuid",
+        "openssl",
+        "pcre2",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "wget",
+        "homepage": "https://www.gnu.org/software/wget/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/wget"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 811008,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/w/wget/wget_1.25.0-1_aarch64.deb",
+        "filename": "wget_1.25.0-1_aarch64.deb",
+        "sha256": "f2631519e0b9add766a82b6fa9b294476bddb6cad9033c214c7575b5822a8bc4",
+        "size": 281248
+      }
+    },
+    {
+      "name": "libidn2",
+      "version": "2.3.8-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libiconv",
+        "libunistring"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libidn2",
+        "homepage": "https://www.gnu.org/software/libidn/#libidn2"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 438272,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libidn2/libidn2_2.3.8-1_aarch64.deb",
+        "filename": "libidn2_2.3.8-1_aarch64.deb",
+        "sha256": "a450a1ba25759ebf78738484a3efee316c51a1fe7bafb0b01a68e2c058a91020",
+        "size": 105308
+      }
+    },
+    {
+      "name": "libunistring",
+      "version": "1.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libiconv"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libunistring",
+        "homepage": "https://www.gnu.org/software/libunistring/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 3399680,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libu/libunistring/libunistring_1.5_aarch64.deb",
+        "filename": "libunistring_1.5_aarch64.deb",
+        "sha256": "8853ca1421d6472046a0683d53084b26db1caa50a3aa2bf6422a1276c7dba69b",
+        "size": 574056
+      }
+    },
+    {
+      "name": "libuuid",
+      "version": "2.42.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-posix-semaphore"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libuuid",
+        "homepage": "https://en.wikipedia.org/wiki/Util-linux"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 86016,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libu/libuuid/libuuid_2.42.4_aarch64.deb",
+        "filename": "libuuid_2.42.4_aarch64.deb",
+        "sha256": "ecbaab0afd7f4c2c84d687c8e4ba46794d71001866efc261a7015f663eec4e85",
+        "size": 15456
+      }
+    },
+    {
+      "name": "unzip",
+      "version": "6.0-11",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libbz2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "unzip",
+        "homepage": "https://sourceforge.net/projects/infozip/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/unzip"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 335872,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/unzip/unzip_6.0-11_aarch64.deb",
+        "filename": "unzip_6.0-11_aarch64.deb",
+        "sha256": "ec0d9f0413f7f0807544ae35dc45a0e651b91bcf0758c1ae5598a03321da01d4",
+        "size": 116992
+      }
+    },
+    {
+      "name": "ripgrep",
+      "version": "16.0.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "pcre2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "ripgrep",
+        "homepage": "https://github.com/BurntSushi/ripgrep"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/rg"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 5193728,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/r/ripgrep/ripgrep_16.0.0_aarch64.deb",
+        "filename": "ripgrep_16.0.0_aarch64.deb",
+        "sha256": "b24d44fd66baf62aeee78c12fabe9dcac6424add0daa271645312d4276be9f59",
+        "size": 1244464
+      }
+    },
+    {
+      "name": "ffmpeg",
+      "version": "9.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "fontconfig",
+        "freetype",
+        "fribidi",
+        "game-music-emu",
+        "harfbuzz",
+        "libaom",
+        "libandroid-glob",
+        "libandroid-shmem",
+        "libandroid-stub",
+        "libass",
+        "libbluray",
+        "libbs2b",
+        "libbz2",
+        "libdav1d",
+        "libdvdnav",
+        "libdvdread",
+        "libiconv",
+        "libjxl",
+        "liblzma",
+        "libmysofa",
+        "libmp3lame",
+        "libopencore-amr",
+        "libopenmpt",
+        "libopus",
+        "libplacebo",
+        "librav1e",
+        "libsoxr",
+        "libsrt",
+        "libssh",
+        "libtheora",
+        "libv4l",
+        "libvidstab",
+        "libvmaf",
+        "libvo-amrwbenc",
+        "libvorbis",
+        "libvpx",
+        "libwebp",
+        "libx264",
+        "libx265",
+        "libxcb",
+        "libxml2",
+        "libzimg",
+        "libzmq",
+        "littlecms",
+        "ocl-icd",
+        "openssl",
+        "rubberband",
+        "svt-av1",
+        "vulkan-icd",
+        "xvidcore",
+        "zlib"
+      ],
+      "conflicts": [
+        "libav"
+      ],
+      "source": {
+        "package": "ffmpeg",
+        "homepage": "https://ffmpeg.org"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/ffmpeg"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 39489536,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/ffmpeg/ffmpeg_9.1_aarch64.deb",
+        "filename": "ffmpeg_9.1_aarch64.deb",
+        "sha256": "82d7fb867e1dbf209c79396c6f9a058e460d2fb098baef40c13c0bd535f6227f",
+        "size": 12124312
+      }
+    },
+    {
+      "name": "fontconfig",
+      "version": "2.18.4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "freetype",
+        "libexpat",
+        "ttf-dejavu"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "fontconfig",
+        "homepage": "https://www.freedesktop.org/wiki/Software/fontconfig/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 909312,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fontconfig/fontconfig_2.18.4_aarch64.deb",
+        "filename": "fontconfig_2.18.4_aarch64.deb",
+        "sha256": "c0e36ace6e698259bb362925f377e0c3d728079ee124d7c3655de6900da43b10",
+        "size": 141012
+      }
+    },
+    {
+      "name": "freetype",
+      "version": "2.15.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "brotli",
+        "libbz2",
+        "libpng",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "freetype",
+        "homepage": "https://www.freetype.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1769472,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/freetype/freetype_2.15.0_aarch64.deb",
+        "filename": "freetype_2.15.0_aarch64.deb",
+        "sha256": "fe217807b22aa40029874eb1d9e01b89a01b5f1e4f0556c4de9c8e83c4db4256",
+        "size": 422056
+      }
+    },
+    {
+      "name": "brotli",
+      "version": "1.2.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "brotli",
+        "homepage": "https://github.com/google/brotli"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1077248,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/b/brotli/brotli_1.2.1_aarch64.deb",
+        "filename": "brotli_1.2.1_aarch64.deb",
+        "sha256": "4fba29438b2b44f8470d52173b4548e938542dc2fc632f8699be5a284cbb9485",
+        "size": 344000
+      }
+    },
+    {
+      "name": "libpng",
+      "version": "1.6.59",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libpng",
+        "homepage": "http://www.libpng.org/pub/png/libpng.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 536576,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libp/libpng/libpng_1.6.59_aarch64.deb",
+        "filename": "libpng_1.6.59_aarch64.deb",
+        "sha256": "32d61f0b1a60cf7283aa3a80e288737493df2c6b84c8c749606b77c94a10f2b2",
+        "size": 195892
+      }
+    },
+    {
+      "name": "ttf-dejavu",
+      "version": "2.37-8",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "ttf-dejavu",
+        "homepage": "https://dejavu-fonts.github.io/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 10350592,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/ttf-dejavu/ttf-dejavu_2.37-8_all.deb",
+        "filename": "ttf-dejavu_2.37-8_all.deb",
+        "sha256": "3fa9352d528cb19aebcdd2de5d1fb0cb67b201be3ae264207fc1a277d2cfd6da",
+        "size": 2468280
+      }
+    },
+    {
+      "name": "fribidi",
+      "version": "1.0.18",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "glib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "fribidi",
+        "homepage": "https://github.com/fribidi/fribidi/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 462848,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fribidi/fribidi_1.0.18_aarch64.deb",
+        "filename": "fribidi_1.0.18_aarch64.deb",
+        "sha256": "6d9a4f6403a1450d22514dc7dc4de2b2358bec28afbce4576e37a3b224beae4b",
+        "size": 67172
+      }
+    },
+    {
+      "name": "glib",
+      "version": "2.90.2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libffi",
+        "libiconv",
+        "pcre2",
+        "resolv-conf",
+        "zlib",
+        "python"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "glib",
+        "homepage": "https://developer.gnome.org/glib/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 21458944,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/glib/glib_2.90.2_aarch64.deb",
+        "filename": "glib_2.90.2_aarch64.deb",
+        "sha256": "22237d7b0df4e65a81c0bb68767ebec4fbf5769dbb2849217ecfd8bf25ed11f4",
+        "size": 2572600
+      }
+    },
+    {
+      "name": "libffi",
+      "version": "3.8.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libffi",
+        "homepage": "https://sourceware.org/libffi/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 245760,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libf/libffi/libffi_3.8.1_aarch64.deb",
+        "filename": "libffi_3.8.1_aarch64.deb",
+        "sha256": "9e13f3b5c40625c384101992bb669a278e07d9e2baa37d286d7ed164288fab1a",
+        "size": 35808
+      }
+    },
+    {
+      "name": "resolv-conf",
+      "version": "1.3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "resolv-conf",
+        "homepage": "https://man7.org/linux/man-pages/man5/resolv.conf.5.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 49152,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/r/resolv-conf/resolv-conf_1.3_aarch64.deb",
+        "filename": "resolv-conf_1.3_aarch64.deb",
+        "sha256": "ab541abac8e0c81709cd7ca4a02bcfa0d60ba1f4bfe7fd6dce4a694a4a9dfffa",
+        "size": 976
+      }
+    },
+    {
+      "name": "python",
+      "version": "3.14.10",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "gdbm",
+        "libandroid-posix-semaphore",
+        "libandroid-support",
+        "libbz2",
+        "libcrypt",
+        "libexpat",
+        "libffi",
+        "liblzma",
+        "libsqlite",
+        "ncurses",
+        "ncurses-ui-libs",
+        "openssl",
+        "readline",
+        "zlib",
+        "zstd"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "python",
+        "homepage": "https://python.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/python"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 27144192,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/p/python/python_3.14.10_aarch64.deb",
+        "filename": "python_3.14.10_aarch64.deb",
+        "sha256": "1a5a300c8d844f2c18a3bb61cafbffb2e93fba9a7106ebe967f06c9628d1e434",
+        "size": 4893180
+      }
+    },
+    {
+      "name": "gdbm",
+      "version": "1.26-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "readline"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "gdbm",
+        "homepage": "https://www.gnu.org.ua/software/gdbm/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 598016,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/gdbm/gdbm_1.26-1_aarch64.deb",
+        "filename": "gdbm_1.26-1_aarch64.deb",
+        "sha256": "c378de833aae3cf41f3028491ea11836479d9833ab653edc27d0c0e0e691d5c5",
+        "size": 150284
+      }
+    },
+    {
+      "name": "libcrypt",
+      "version": "0.2-6",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "openssl"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libcrypt",
+        "homepage": "http://michael.dipperstein.com/crypt/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 73728,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libc/libcrypt/libcrypt_0.2-6_aarch64.deb",
+        "filename": "libcrypt_0.2-6_aarch64.deb",
+        "sha256": "6c283eed576b98cc3568f99638156f8588f77d979579d03bef8683d6eb8601e1",
+        "size": 8880
+      }
+    },
+    {
+      "name": "libsqlite",
+      "version": "3.54.1-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libsqlite",
+        "homepage": "https://www.sqlite.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 3313664,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsqlite/libsqlite_3.54.1-1_aarch64.deb",
+        "filename": "libsqlite_3.54.1-1_aarch64.deb",
+        "sha256": "661fb995f7215845007b222a85266ae99d9443e87e0604f8677edfd738e6b81a",
+        "size": 768888
+      }
+    },
+    {
+      "name": "ncurses-ui-libs",
+      "version": "6.6.20260307+really6.5.20250830",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "ncurses"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "ncurses-ui-libs",
+        "homepage": "https://invisible-island.net/ncurses/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 151552,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/ncurses-ui-libs/ncurses-ui-libs_6.6.20260307+really6.5.20250830_aarch64.deb",
+        "filename": "ncurses-ui-libs_6.6.20260307+really6.5.20250830_aarch64.deb",
+        "sha256": "7393f369009be189b3d4ec1f9b16ebd57621d6a1b22949ae07685573950d1f37",
+        "size": 32940
+      }
+    },
+    {
+      "name": "zstd",
+      "version": "1.6.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "liblzma",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "zstd",
+        "homepage": "https://github.com/facebook/zstd"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1183744,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/z/zstd/zstd_1.6.0_aarch64.deb",
+        "filename": "zstd_1.6.0_aarch64.deb",
+        "sha256": "c487af7d68664585cc5187330acc7a7a054614cb742fcbb1d8a62e214bb3368a",
+        "size": 321312
+      }
+    },
+    {
+      "name": "game-music-emu",
+      "version": "0.6.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "game-music-emu",
+        "homepage": "https://bitbucket.org/mpyne/game-music-emu/wiki/Home"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 389120,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/game-music-emu/game-music-emu_0.6.5_aarch64.deb",
+        "filename": "game-music-emu_0.6.5_aarch64.deb",
+        "sha256": "ffe1c43919d485409b2459d462b2dc6389492afeea869aef701b391a4ed29c67",
+        "size": 127952
+      }
+    },
+    {
+      "name": "harfbuzz",
+      "version": "15.2.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "freetype",
+        "glib",
+        "libcairo",
+        "libgraphite"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "harfbuzz",
+        "homepage": "https://www.freedesktop.org/wiki/Software/HarfBuzz/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 5988352,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/harfbuzz/harfbuzz_15.2.0_aarch64.deb",
+        "filename": "harfbuzz_15.2.0_aarch64.deb",
+        "sha256": "956483c3f898fe522d10a494b2c33c221c0c9e9a4c8fc218c142e004f4e4385d",
+        "size": 994440
+      }
+    },
+    {
+      "name": "libcairo",
+      "version": "1.18.6",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "fontconfig",
+        "freetype",
+        "glib",
+        "libandroid-shmem",
+        "libandroid-execinfo",
+        "liblzo",
+        "libpixman",
+        "libpng",
+        "libx11",
+        "libxcb",
+        "libxext",
+        "libxrender",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libcairo",
+        "homepage": "https://cairographics.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1679360,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libc/libcairo/libcairo_1.18.6_aarch64.deb",
+        "filename": "libcairo_1.18.6_aarch64.deb",
+        "sha256": "c2caebbd7a5e2c778729868fdbae54f87a324cccb5ad254bcae050a412d9cd57",
+        "size": 487700
+      }
+    },
+    {
+      "name": "libandroid-shmem",
+      "version": "0.7",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libandroid-shmem",
+        "homepage": "https://github.com/termux/libandroid-shmem"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 73728,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-shmem/libandroid-shmem_0.7_aarch64.deb",
+        "filename": "libandroid-shmem_0.7_aarch64.deb",
+        "sha256": "0da3a24d558b93c92bcf8d611e0826a99ff96e396b148e6cdf33b47c47c57ff6",
+        "size": 7216
+      }
+    },
+    {
+      "name": "libandroid-execinfo",
+      "version": "0.1-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [
+        "libexecinfo"
+      ],
+      "source": {
+        "package": "libandroid-execinfo",
+        "homepage": "https://man7.org/linux/man-pages/man3/backtrace.3.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 90112,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-execinfo/libandroid-execinfo_0.1-3_aarch64.deb",
+        "filename": "libandroid-execinfo_0.1-3_aarch64.deb",
+        "sha256": "725dd2c6da7fc96e860fcc928e18aa9fb0e85e0bdcaf4f8ce0f0654ca6860fc2",
+        "size": 14964
+      }
+    },
+    {
+      "name": "liblzo",
+      "version": "2.10-5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "liblzo",
+        "homepage": "http://www.oberhumer.com/opensource/lzo"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 458752,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libl/liblzo/liblzo_2.10-5_aarch64.deb",
+        "filename": "liblzo_2.10-5_aarch64.deb",
+        "sha256": "b8a6d232d592dcd6529589c817927cca3254f3ab40a85fce873d997ace7d1ca2",
+        "size": 69560
+      }
+    },
+    {
+      "name": "libpixman",
+      "version": "0.46.4-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libpixman",
+        "homepage": "https://www.pixman.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 692224,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libp/libpixman/libpixman_0.46.4-1_aarch64.deb",
+        "filename": "libpixman_0.46.4-1_aarch64.deb",
+        "sha256": "364b8c82ff68f8513930e5d413459fb7c52eccc7ba75a97a8c5a38760eee8d33",
+        "size": 157712
+      }
+    },
+    {
+      "name": "libx11",
+      "version": "1.8.14",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libxcb",
+        "xorgproto"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libx11",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 14032896,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libx11/libx11_1.8.14_aarch64.deb",
+        "filename": "libx11_1.8.14_aarch64.deb",
+        "sha256": "c5206ee9cc26a63985d110b57bc24f23c7c97505e6100c4d6a8547a1aeed5532",
+        "size": 1910512
+      }
+    },
+    {
+      "name": "libxcb",
+      "version": "1.17.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libxau",
+        "libxdmcp"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libxcb",
+        "homepage": "https://xcb.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 13078528,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxcb/libxcb_1.17.0-1_aarch64.deb",
+        "filename": "libxcb_1.17.0-1_aarch64.deb",
+        "sha256": "191c3642b6a8c754bc75b69b94a81858ecb5f18766dc085aff55559b8087ad34",
+        "size": 913948
+      }
+    },
+    {
+      "name": "libxau",
+      "version": "1.0.12-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libxau",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 131072,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxau/libxau_1.0.12-2_aarch64.deb",
+        "filename": "libxau_1.0.12-2_aarch64.deb",
+        "sha256": "2d86bed61ce89dd8fdb55e565aede10155f2ce3adaccb61d5f1375aec3314083",
+        "size": 9120
+      }
+    },
+    {
+      "name": "libxdmcp",
+      "version": "1.1.5-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libxdmcp",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 200704,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxdmcp/libxdmcp_1.1.5-2_aarch64.deb",
+        "filename": "libxdmcp_1.1.5-2_aarch64.deb",
+        "sha256": "caea0cf5c0028af0840774094b8900ef7afffd8f9bbd7b1abfbe66851f0d6077",
+        "size": 24460
+      }
+    },
+    {
+      "name": "xorgproto",
+      "version": "2026.1",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [
+        "xorg-util-macros"
+      ],
+      "conflicts": [
+        "x11-proto"
+      ],
+      "source": {
+        "package": "xorgproto",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2351104,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/x/xorgproto/xorgproto_2026.1_all.deb",
+        "filename": "xorgproto_2026.1_all.deb",
+        "sha256": "2463651143a386eba0d7baebac87ca5d2db5239d36cf38f9b2086f3c1bfdcbce",
+        "size": 249848
+      }
+    },
+    {
+      "name": "xorg-util-macros",
+      "version": "1.20.2",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "xorg-util-macros",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 147456,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/x/xorg-util-macros/xorg-util-macros_1.20.2_all.deb",
+        "filename": "xorg-util-macros_1.20.2_all.deb",
+        "sha256": "11765ad1a6f181e36f807464f7b4360593d847dce245202a393eb2ca156520d0",
+        "size": 21948
+      }
+    },
+    {
+      "name": "libxext",
+      "version": "1.3.7",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libx11"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libxext",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 630784,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxext/libxext_1.3.7_aarch64.deb",
+        "filename": "libxext_1.3.7_aarch64.deb",
+        "sha256": "6e98a24e0d1996d25f7db8d70ecae02cfe5fc146343428a065149003454c7fc9",
+        "size": 98008
+      }
+    },
+    {
+      "name": "libxrender",
+      "version": "0.9.13",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libx11"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libxrender",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 167936,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxrender/libxrender_0.9.13_aarch64.deb",
+        "filename": "libxrender_0.9.13_aarch64.deb",
+        "sha256": "66b96ac572a9133836b638fb773b0dde4980541d9c49279a75a9ebace8f827c8",
+        "size": 24728
+      }
+    },
+    {
+      "name": "libgraphite",
+      "version": "1.3.15",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libgraphite",
+        "homepage": "https://github.com/silnrsi/graphite"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 303104,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libg/libgraphite/libgraphite_1.3.15_aarch64.deb",
+        "filename": "libgraphite_1.3.15_aarch64.deb",
+        "sha256": "15ac85737a35150cecb9e46ecb32567ae2a4fc28071cdf58fb95e1b77d7889d9",
+        "size": 82208
+      }
+    },
+    {
+      "name": "libaom",
+      "version": "3.15.3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libaom",
+        "homepage": "https://aomedia.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 7565312,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libaom/libaom_3.15.3_aarch64.deb",
+        "filename": "libaom_3.15.3_aarch64.deb",
+        "sha256": "942fa9a844e77a5a0bd73da4928261538f08cf79109c0608d28f0243eaeba1a2",
+        "size": 2081952
+      }
+    },
+    {
+      "name": "libandroid-stub",
+      "version": "30-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [
+        "libandroid"
+      ],
+      "source": {
+        "package": "libandroid-stub",
+        "homepage": "https://android.googlesource.com/platform/frameworks/base/+/main/native/android"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 176128,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libandroid-stub/libandroid-stub_30-3_aarch64.deb",
+        "filename": "libandroid-stub_30-3_aarch64.deb",
+        "sha256": "88c7f4ba78a5eb57eafc2f1102ceea562a156fe7346528ca35c771eb0927fefc",
+        "size": 27348
+      }
+    },
+    {
+      "name": "libass",
+      "version": "0.17.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "fontconfig",
+        "fribidi",
+        "glib",
+        "harfbuzz"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libass",
+        "homepage": "https://github.com/libass/libass"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 286720,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/liba/libass/libass_0.17.5_aarch64.deb",
+        "filename": "libass_0.17.5_aarch64.deb",
+        "sha256": "4f94205285ea2062be4f60e695723a6f3350339ec89720943b0dce5ae30db01d",
+        "size": 85252
+      }
+    },
+    {
+      "name": "libbluray",
+      "version": "1.5.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "fontconfig",
+        "freetype",
+        "libudfread",
+        "libxml2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libbluray",
+        "homepage": "https://code.videolan.org/videolan/libbluray/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 401408,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libb/libbluray/libbluray_1.5.1_aarch64.deb",
+        "filename": "libbluray_1.5.1_aarch64.deb",
+        "sha256": "fbe931e6a7d9604fe865bd24b8012ad3b7f04c6bbb6cf9b277760db1b4a8df7e",
+        "size": 110932
+      }
+    },
+    {
+      "name": "libudfread",
+      "version": "1.2.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libudfread",
+        "homepage": "https://code.videolan.org/videolan/libudfread/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 106496,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libu/libudfread/libudfread_1.2.0_aarch64.deb",
+        "filename": "libudfread_1.2.0_aarch64.deb",
+        "sha256": "61a7e02c30ae61f9cbe46bf8cefa8e361a16b29010a07cacb43513ff533df81c",
+        "size": 15072
+      }
+    },
+    {
+      "name": "libxml2",
+      "version": "2.15.4-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-glob",
+        "libiconv",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libxml2",
+        "homepage": "https://gitlab.gnome.org/GNOME/libxml2/-/wikis/home"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1687552,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxml2/libxml2_2.15.4-1_aarch64.deb",
+        "filename": "libxml2_2.15.4-1_aarch64.deb",
+        "sha256": "d315861bbcf716cfb088f53cddab9fb6a96430cc66769f79774cc69c2f53bcff",
+        "size": 442652
+      }
+    },
+    {
+      "name": "libbs2b",
+      "version": "3.1.0-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "libsndfile"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libbs2b",
+        "homepage": "https://bs2b.sourceforge.net/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 135168,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libb/libbs2b/libbs2b_3.1.0-2_aarch64.deb",
+        "filename": "libbs2b_3.1.0-2_aarch64.deb",
+        "sha256": "c71660d99e4baa064ba93f0ef750b6b2ea0d1d494a754cf1c67b550bb4baa91d",
+        "size": 13636
+      }
+    },
+    {
+      "name": "libsndfile",
+      "version": "1.2.2-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libflac",
+        "libmp3lame",
+        "libmpg123",
+        "libogg",
+        "libopus",
+        "libvorbis"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libsndfile",
+        "homepage": "http://www.mega-nerd.com/libsndfile"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 761856,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsndfile/libsndfile_1.2.2-3_aarch64.deb",
+        "filename": "libsndfile_1.2.2-3_aarch64.deb",
+        "sha256": "1e1fb77b14ec26f3ff6ded069e9ec816ab7535ae5d074122c6727b0f59d8aff3",
+        "size": 223576
+      }
+    },
+    {
+      "name": "libflac",
+      "version": "1.5.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "libogg"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libflac",
+        "homepage": "https://xiph.org/flac/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1069056,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libf/libflac/libflac_1.5.0-1_aarch64.deb",
+        "filename": "libflac_1.5.0-1_aarch64.deb",
+        "sha256": "d1d6fcac6fd6d15c36f34464cb01d5e2140e321d8448dfc396cd7eb1536b1f6c",
+        "size": 202828
+      }
+    },
+    {
+      "name": "libogg",
+      "version": "1.3.6-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libogg",
+        "homepage": "https://xiph.org/ogg/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 700416,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libo/libogg/libogg_1.3.6-1_aarch64.deb",
+        "filename": "libogg_1.3.6-1_aarch64.deb",
+        "sha256": "4f1700a532f251ad3600f44f88cd764f1f6b0542d3343391117944b47a92802d",
+        "size": 188636
+      }
+    },
+    {
+      "name": "libmp3lame",
+      "version": "4.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libiconv",
+        "libmpg123"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libmp3lame",
+        "homepage": "https://lame.sourceforge.io/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 311296,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libm/libmp3lame/libmp3lame_4.0-1_aarch64.deb",
+        "filename": "libmp3lame_4.0-1_aarch64.deb",
+        "sha256": "59f70ad8885578063bcbea3b11e74fb69e2416ca036b47aa255c1fa4f074565e",
+        "size": 98588
+      }
+    },
+    {
+      "name": "libmpg123",
+      "version": "1.33.7",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libmpg123",
+        "homepage": "https://mpg123.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 630784,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libm/libmpg123/libmpg123_1.33.7_aarch64.deb",
+        "filename": "libmpg123_1.33.7_aarch64.deb",
+        "sha256": "883b104faae53820b2e758363300ccf99e28f627a263d766af61ae07b73b07b3",
+        "size": 175116
+      }
+    },
+    {
+      "name": "libopus",
+      "version": "1.6.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libopus",
+        "homepage": "https://www.opus-codec.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 581632,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libo/libopus/libopus_1.6.1_aarch64.deb",
+        "filename": "libopus_1.6.1_aarch64.deb",
+        "sha256": "005a9335ce0ec0f510bbe6e0229c901d6f920cc375fcda56461e96cef70f8ff0",
+        "size": 191480
+      }
+    },
+    {
+      "name": "libvorbis",
+      "version": "1.3.7-4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libogg"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libvorbis",
+        "homepage": "https://xiph.org/vorbis/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1806336,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libv/libvorbis/libvorbis_1.3.7-4_aarch64.deb",
+        "filename": "libvorbis_1.3.7-4_aarch64.deb",
+        "sha256": "6bfd70c4b570b85594bd06116b75a6f8109ec58cbc123e938b630a6eefdedf4e",
+        "size": 261740
+      }
+    },
+    {
+      "name": "libdav1d",
+      "version": "1.5.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libdav1d",
+        "homepage": "https://code.videolan.org/videolan/dav1d/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 860160,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libd/libdav1d/libdav1d_1.5.5_aarch64.deb",
+        "filename": "libdav1d_1.5.5_aarch64.deb",
+        "sha256": "18716edc2e9caf2e71a6be7702e66517fbc069b8e24d6a7b6fa00bda6e6d241b",
+        "size": 266264
+      }
+    },
+    {
+      "name": "libdvdnav",
+      "version": "7.0.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libdvdread"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libdvdnav",
+        "homepage": "https://www.videolan.org/developers/libdvdnav.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 229376,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libd/libdvdnav/libdvdnav_7.0.0_aarch64.deb",
+        "filename": "libdvdnav_7.0.0_aarch64.deb",
+        "sha256": "fd8509a88b5966cdadf9925b2687e50c31d796e773cb326e651e76c0a3b16958",
+        "size": 49404
+      }
+    },
+    {
+      "name": "libdvdread",
+      "version": "7.1.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libdvdread",
+        "homepage": "https://code.videolan.org/videolan/libdvdread"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 344064,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libd/libdvdread/libdvdread_7.1.1_aarch64.deb",
+        "filename": "libdvdread_7.1.1_aarch64.deb",
+        "sha256": "8e1606f7d2aec40c9e8f748ab595cf0f684c998b4642bc59fa6b18b5fe1d2fb0",
+        "size": 78252
+      }
+    },
+    {
+      "name": "libjxl",
+      "version": "0.13.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "brotli",
+        "giflib",
+        "glib",
+        "highway",
+        "libc++",
+        "libffi",
+        "libiconv",
+        "libjpeg-turbo",
+        "libpng",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libjxl",
+        "homepage": "https://jpegxl.info/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 4665344,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libj/libjxl/libjxl_0.13.0_aarch64.deb",
+        "filename": "libjxl_0.13.0_aarch64.deb",
+        "sha256": "7ccbe06a6c0d22a8934729e580397bb405c30ea5f25ccf18365c1c79c7103f5c",
+        "size": 993768
+      }
+    },
+    {
+      "name": "giflib",
+      "version": "6.1.3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "giflib",
+        "homepage": "https://giflib.sourceforge.net/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 258048,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/giflib/giflib_6.1.3_aarch64.deb",
+        "filename": "giflib_6.1.3_aarch64.deb",
+        "sha256": "c46823a7a9cb07f1f833392e36d0ead162f9972a4d3881a6e4b5700ec55b2534",
+        "size": 43832
+      }
+    },
+    {
+      "name": "highway",
+      "version": "1.4.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "highway",
+        "homepage": "https://github.com/google/highway"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 6721536,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/h/highway/highway_1.4.0-1_aarch64.deb",
+        "filename": "highway_1.4.0-1_aarch64.deb",
+        "sha256": "71b8e0c231ab6b66827374543d55997a5cb02d8882f5d53e059ba78cd2511da1",
+        "size": 682536
+      }
+    },
+    {
+      "name": "libjpeg-turbo",
+      "version": "3.2.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libjpeg-turbo",
+        "homepage": "https://libjpeg-turbo.virtualgl.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2359296,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libj/libjpeg-turbo/libjpeg-turbo_3.2.1_aarch64.deb",
+        "filename": "libjpeg-turbo_3.2.1_aarch64.deb",
+        "sha256": "3e46721f2fbb10d5f53a45b99e2549d18a34ca3751aa4b704b3404fcdea5f8e7",
+        "size": 455972
+      }
+    },
+    {
+      "name": "libmysofa",
+      "version": "1.3.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libmysofa",
+        "homepage": "https://github.com/hoene/libmysofa"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1359872,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libm/libmysofa/libmysofa_1.3.5_aarch64.deb",
+        "filename": "libmysofa_1.3.5_aarch64.deb",
+        "sha256": "b083050d4bc0bd11db0f73382ae3db8c5dc352520b78aaa44f150d87cff80215",
+        "size": 1160956
+      }
+    },
+    {
+      "name": "libopencore-amr",
+      "version": "0.1.6-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libopencore-amr",
+        "homepage": "https://sourceforge.net/projects/opencore-amr/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 303104,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libo/libopencore-amr/libopencore-amr_0.1.6-1_aarch64.deb",
+        "filename": "libopencore-amr_0.1.6-1_aarch64.deb",
+        "sha256": "8ad25c12b892d56e85a21517d814146109fea7865b2548b8637743d7d6e0fee2",
+        "size": 111688
+      }
+    },
+    {
+      "name": "libopenmpt",
+      "version": "0.8.10",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "libvorbis",
+        "libmpg123",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libopenmpt",
+        "homepage": "https://lib.openmpt.org/libopenmpt/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2031616,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libo/libopenmpt/libopenmpt_0.8.10_aarch64.deb",
+        "filename": "libopenmpt_0.8.10_aarch64.deb",
+        "sha256": "ffbd8d03f0f4ca21aefdd5777d133a0b2ddafb44697f1c386e977fb048362235",
+        "size": 543528
+      }
+    },
+    {
+      "name": "libplacebo",
+      "version": "7.387.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "littlecms",
+        "glslang",
+        "python",
+        "vulkan-icd"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libplacebo",
+        "homepage": "http://libplacebo.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1699840,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libp/libplacebo/libplacebo_7.387.0_aarch64.deb",
+        "filename": "libplacebo_7.387.0_aarch64.deb",
+        "sha256": "925a54773e29aefc790fd1a6d7759ea3b893d0482db878299c8b885233655f82",
+        "size": 451204
+      }
+    },
+    {
+      "name": "littlecms",
+      "version": "2.20",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "littlecms",
+        "homepage": "http://www.littlecms.com/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 557056,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/l/littlecms/littlecms_2.20_aarch64.deb",
+        "filename": "littlecms_2.20_aarch64.deb",
+        "sha256": "20be10d39b67e50366e172d11e7f3895fa2a71b5a86139713a101fa1d3b8d015",
+        "size": 144508
+      }
+    },
+    {
+      "name": "glslang",
+      "version": "16.6.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "glslang",
+        "homepage": "https://github.com/KhronosGroup/glslang"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 16936960,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/g/glslang/glslang_16.6.0_aarch64.deb",
+        "filename": "glslang_16.6.0_aarch64.deb",
+        "sha256": "c5b5d6cb57d5841966c4b07033d319ebf6a3df61347a484b9dc5e332d29cd721",
+        "size": 2543452
+      }
+    },
+    {
+      "name": "vulkan-icd",
+      "version": "0.1-1",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [
+        "mesa-vulkan-icd-swrast"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "vulkan-icd",
+        "homepage": "https://github.com/termux/termux-packages"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 4096,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/v/vulkan-icd/vulkan-icd_0.1-1_all.deb",
+        "filename": "vulkan-icd_0.1-1_all.deb",
+        "sha256": "d8d99b23502a3ff5952bc4d1c64375189c6aabce21729a96ccfee64677535329",
+        "size": 740
+      }
+    },
+    {
+      "name": "mesa-vulkan-icd-swrast",
+      "version": "26.3.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-shmem",
+        "libc++",
+        "libdrm",
+        "libllvm",
+        "libx11",
+        "libxcb",
+        "libxshmfence",
+        "libwayland",
+        "ncurses",
+        "vulkan-loader-generic",
+        "zlib",
+        "zstd"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "mesa-vulkan-icd-swrast",
+        "homepage": "https://www.mesa3d.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 12754944,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/m/mesa-vulkan-icd-swrast/mesa-vulkan-icd-swrast_26.3.1_aarch64.deb",
+        "filename": "mesa-vulkan-icd-swrast_26.3.1_aarch64.deb",
+        "sha256": "be608a81f088c8f99141cc11634ef0e7c3c0bcf3e98e7b6a31ac34eb9d12853e",
+        "size": 1632628
+      }
+    },
+    {
+      "name": "libdrm",
+      "version": "2.4.134",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libdrm",
+        "homepage": "https://dri.freedesktop.org/wiki/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 921600,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libd/libdrm/libdrm_2.4.134_aarch64.deb",
+        "filename": "libdrm_2.4.134_aarch64.deb",
+        "sha256": "0cbe82140cf325c15473fbf53a3711fc7a2fb88e36a3eea58a3267c461ab4a17",
+        "size": 180604
+      }
+    },
+    {
+      "name": "libllvm",
+      "version": "21.1.8-3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "libffi",
+        "libxml2",
+        "ncurses",
+        "zlib",
+        "zstd"
+      ],
+      "conflicts": [
+        "gcc"
+      ],
+      "source": {
+        "package": "libllvm",
+        "homepage": "https://clang.llvm.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 173633536,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libl/libllvm/libllvm_21.1.8-3_aarch64.deb",
+        "filename": "libllvm_21.1.8-3_aarch64.deb",
+        "sha256": "5056a73f2645fc9c0759e6f94a1bd6edcf36305acaef58dc685211ced9cc2a02",
+        "size": 30733892
+      }
+    },
+    {
+      "name": "libxshmfence",
+      "version": "1.3.3-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libxshmfence",
+        "homepage": "https://xorg.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 77824,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libxshmfence/libxshmfence_1.3.3-1_aarch64.deb",
+        "filename": "libxshmfence_1.3.3-1_aarch64.deb",
+        "sha256": "7644c2969c2ce4d763785bd2a85eb32ccf8e5ad40228cd92b193f7edb6398d92",
+        "size": 4548
+      }
+    },
+    {
+      "name": "libwayland",
+      "version": "1.26.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-support",
+        "libexpat",
+        "libffi",
+        "libxml2"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libwayland",
+        "homepage": "https://wayland.freedesktop.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1011712,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libw/libwayland/libwayland_1.26.0_aarch64.deb",
+        "filename": "libwayland_1.26.0_aarch64.deb",
+        "sha256": "f03ea02f7d523399514e2463c5459dab234b802bbda41a61c0340b4011dc773d",
+        "size": 129444
+      }
+    },
+    {
+      "name": "vulkan-loader-generic",
+      "version": "1.4.369",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [
+        "vulkan-loader-android"
+      ],
+      "source": {
+        "package": "vulkan-loader-generic",
+        "homepage": "https://github.com/KhronosGroup/Vulkan-Loader"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 671744,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/v/vulkan-loader-generic/vulkan-loader-generic_1.4.369_aarch64.deb",
+        "filename": "vulkan-loader-generic_1.4.369_aarch64.deb",
+        "sha256": "47c2147bf49093bcf6898fc202b2c5856e8dddf58b7b49f901bf28da4e5611a8",
+        "size": 144368
+      }
+    },
+    {
+      "name": "librav1e",
+      "version": "0.8.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "librav1e",
+        "homepage": "https://github.com/xiph/rav1e/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2375680,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libr/librav1e/librav1e_0.8.1_aarch64.deb",
+        "filename": "librav1e_0.8.1_aarch64.deb",
+        "sha256": "ac7842a5896bdff1b4d4974d9c02e60f7d4a587b8618df691118a8591f8dbccf",
+        "size": 695340
+      }
+    },
+    {
+      "name": "libsoxr",
+      "version": "0.1.3-8",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libsoxr",
+        "homepage": "https://sourceforge.net/projects/soxr/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1110016,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsoxr/libsoxr_0.1.3-8_aarch64.deb",
+        "filename": "libsoxr_0.1.3-8_aarch64.deb",
+        "sha256": "a1c5f66aae3b9900e9a492b43901b2b98586870c7905feb9f3c835cc9af464be",
+        "size": 282436
+      }
+    },
+    {
+      "name": "libsrt",
+      "version": "1.5.7",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "openssl"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libsrt",
+        "homepage": "https://github.com/Haivision/srt"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 970752,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsrt/libsrt_1.5.7_aarch64.deb",
+        "filename": "libsrt_1.5.7_aarch64.deb",
+        "sha256": "6199d01dd9d1630a32c220f7fdb9bca958adbd7062f90e9bfc010cf75fdef07a",
+        "size": 279996
+      }
+    },
+    {
+      "name": "libssh",
+      "version": "0.12.2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "openssl",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libssh",
+        "homepage": "https://www.libssh.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 925696,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libssh/libssh_0.12.2_aarch64.deb",
+        "filename": "libssh_0.12.2_aarch64.deb",
+        "sha256": "05cfb1d6f70e9b316f1eac7a5ec9139f884e644d6d91e668e9ca49716aad8ff0",
+        "size": 234304
+      }
+    },
+    {
+      "name": "libtheora",
+      "version": "1.2.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libogg",
+        "libvorbis"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libtheora",
+        "homepage": "https://www.theora.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 684032,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtheora/libtheora_1.2.0-1_aarch64.deb",
+        "filename": "libtheora_1.2.0-1_aarch64.deb",
+        "sha256": "9d4582f14f71df7a48101ee05297a57a898654ead55ef10ca4d73e254151b1e8",
+        "size": 132020
+      }
+    },
+    {
+      "name": "libv4l",
+      "version": "1.32.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-execinfo",
+        "libandroid-glob",
+        "libjpeg-turbo"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libv4l",
+        "homepage": "https://git.linuxtv.org/v4l-utils.git"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 405504,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libv/libv4l/libv4l_1.32.0-1_aarch64.deb",
+        "filename": "libv4l_1.32.0-1_aarch64.deb",
+        "sha256": "0b3102121ee91167a06de5e9b8b13524c76b7b8d6bdcf2ac57c18dc8e0254e6d",
+        "size": 93336
+      }
+    },
+    {
+      "name": "libvidstab",
+      "version": "1.1.2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libvidstab",
+        "homepage": "https://github.com/georgmartius/vid.stab"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1445888,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libv/libvidstab/libvidstab_1.1.2_aarch64.deb",
+        "filename": "libvidstab_1.1.2_aarch64.deb",
+        "sha256": "598d1c5ea7de4e4c76aa2198602e3dc35684671d9690e69d665058d55a89ab75",
+        "size": 307236
+      }
+    },
+    {
+      "name": "libvmaf",
+      "version": "3.2.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libvmaf",
+        "homepage": "https://github.com/Netflix/vmaf"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1957888,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libv/libvmaf/libvmaf_3.2.1_aarch64.deb",
+        "filename": "libvmaf_3.2.1_aarch64.deb",
+        "sha256": "8c65e85997426c00ce6a419343eb820e164d725e4b267e268a9e8e351e2f9001",
+        "size": 192520
+      }
+    },
+    {
+      "name": "libvo-amrwbenc",
+      "version": "0.1.3-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libvo-amrwbenc",
+        "homepage": "https://sourceforge.net/projects/opencore-amr/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 163840,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libv/libvo-amrwbenc/libvo-amrwbenc_0.1.3-2_aarch64.deb",
+        "filename": "libvo-amrwbenc_0.1.3-2_aarch64.deb",
+        "sha256": "aa913ca492246ed1e6ce57a3c52fe856c323cbb6e8dbdb6904b80214551f6e00",
+        "size": 52344
+      }
+    },
+    {
+      "name": "libvpx",
+      "version": "1:1.17.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libvpx",
+        "homepage": "https://www.webmproject.org"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 2510848,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libv/libvpx/libvpx_1:1.17.0_aarch64.deb",
+        "filename": "libvpx_1:1.17.0_aarch64.deb",
+        "sha256": "1dbc5be0610c9da58732f480c7a27dbb32cf72a472e88c6c0993bdc0feeae00a",
+        "size": 869952
+      }
+    },
+    {
+      "name": "libwebp",
+      "version": "1.6.0.0.0.1+really1.6.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "giflib",
+        "libjpeg-turbo",
+        "libpng",
+        "libtiff",
+        "zlib"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libwebp",
+        "homepage": "https://github.com/webmproject/libwebp"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1282048,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libw/libwebp/libwebp_1.6.0.0.0.1+really1.6.0_aarch64.deb",
+        "filename": "libwebp_1.6.0.0.0.1+really1.6.0_aarch64.deb",
+        "sha256": "8ba7fcfadd1a9957a7632c6407d6ef3e41d34dbd96a41769b245592ed4559045",
+        "size": 329548
+      }
+    },
+    {
+      "name": "libtiff",
+      "version": "4.7.2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "libjpeg-turbo",
+        "liblzma",
+        "zlib",
+        "zstd"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libtiff",
+        "homepage": "http://www.simplesystems.org/libtiff/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 6803456,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libt/libtiff/libtiff_4.7.2_aarch64.deb",
+        "filename": "libtiff_4.7.2_aarch64.deb",
+        "sha256": "998c583d65d7d42dcb177548a218545661f02385a51bb9f5c24f0da4fd046574",
+        "size": 869912
+      }
+    },
+    {
+      "name": "libx264",
+      "version": "1:0.164.3191-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libx264",
+        "homepage": "https://www.videolan.org/developers/x264.html"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1290240,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libx264/libx264_1:0.164.3191-1_aarch64.deb",
+        "filename": "libx264_1:0.164.3191-1_aarch64.deb",
+        "sha256": "fe98852cb06ce1c963a54284179d8cda42af2fa82afcac09f7d81e6de4d9bbc1",
+        "size": 396540
+      }
+    },
+    {
+      "name": "libx265",
+      "version": "4.3",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libandroid-posix-semaphore",
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libx265",
+        "homepage": "https://www.x265.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 9646080,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libx/libx265/libx265_4.3_aarch64.deb",
+        "filename": "libx265_4.3_aarch64.deb",
+        "sha256": "8dbfd50ad2ceea5ffa2384f0f4cc16a87cbf56ac83b4861fa4f640d1beb352cd",
+        "size": 1599320
+      }
+    },
+    {
+      "name": "libzimg",
+      "version": "3.0.6",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libzimg",
+        "homepage": "https://github.com/sekrit-twc/zimg"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 589824,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libz/libzimg/libzimg_3.0.6_aarch64.deb",
+        "filename": "libzimg_3.0.6_aarch64.deb",
+        "sha256": "a776d30cdb5734fa8feb17fb89fe8a67d14d64e491777d9b62b0fd714a9b59e8",
+        "size": 139012
+      }
+    },
+    {
+      "name": "libzmq",
+      "version": "4.3.5-2",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "libsodium"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libzmq",
+        "homepage": "https://zeromq.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1036288,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libz/libzmq/libzmq_4.3.5-2_aarch64.deb",
+        "filename": "libzmq_4.3.5-2_aarch64.deb",
+        "sha256": "1d59efb56905e79159808c6b656cc768ffcc210012bc2d9b63f23162f65480d2",
+        "size": 320404
+      }
+    },
+    {
+      "name": "libsodium",
+      "version": "1.0.22-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libsodium",
+        "homepage": "https://libsodium.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 741376,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsodium/libsodium_1.0.22-1_aarch64.deb",
+        "filename": "libsodium_1.0.22-1_aarch64.deb",
+        "sha256": "a9fbbc3a7a5a2a0f514474ee706d49b576ac09268b87142a3690edb9f5f3643d",
+        "size": 150908
+      }
+    },
+    {
+      "name": "ocl-icd",
+      "version": "2.3.5",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "ocl-icd",
+        "homepage": "https://github.com/OCL-dev/ocl-icd"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 901120,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/o/ocl-icd/ocl-icd_2.3.5_aarch64.deb",
+        "filename": "ocl-icd_2.3.5_aarch64.deb",
+        "sha256": "2d76ddf09069ad599a4d5b2aee374c58411e1a3b0618b1ca5412467c9fd7b26a",
+        "size": 104028
+      }
+    },
+    {
+      "name": "rubberband",
+      "version": "4.0.0-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "fftw",
+        "libc++",
+        "libsamplerate",
+        "libsndfile"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "rubberband",
+        "homepage": "https://breakfastquay.com/rubberband/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1634304,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/r/rubberband/rubberband_4.0.0-1_aarch64.deb",
+        "filename": "rubberband_4.0.0-1_aarch64.deb",
+        "sha256": "1172030a1e3ed70976114c8ca3eb4da0b82c1714825bd751ac1ada606dbc685a",
+        "size": 205764
+      }
+    },
+    {
+      "name": "fftw",
+      "version": "3.3.11",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "fftw",
+        "homepage": "http://www.fftw.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 3493888,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/f/fftw/fftw_3.3.11_aarch64.deb",
+        "filename": "fftw_3.3.11_aarch64.deb",
+        "sha256": "0a5140986bbfc69dbfa8f939f78521fb3dc02a193b6c822b7218dae44d99ffd5",
+        "size": 1004996
+      }
+    },
+    {
+      "name": "libsamplerate",
+      "version": "0.2.2-4",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "libsamplerate",
+        "homepage": "https://libsndfile.github.io/libsamplerate/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1683456,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libs/libsamplerate/libsamplerate_0.2.2-4_aarch64.deb",
+        "filename": "libsamplerate_0.2.2-4_aarch64.deb",
+        "sha256": "521d46cc49557c00b2d5c107da1f86f0cdda8a3a3b84bd9958bd7fc52bec2dae",
+        "size": 973440
+      }
+    },
+    {
+      "name": "svt-av1",
+      "version": "4.3.0",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "svt-av1",
+        "homepage": "https://gitlab.com/AOMediaCodec/SVT-AV1"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 4575232,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/s/svt-av1/svt-av1_4.3.0_aarch64.deb",
+        "filename": "svt-av1_4.3.0_aarch64.deb",
+        "sha256": "3a9459c012dbe3bf9484ee200ff962a49499c05d3cf2829ac278d37973d03cc0",
+        "size": 1520712
+      }
+    },
+    {
+      "name": "xvidcore",
+      "version": "1.3.7-1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "xvidcore",
+        "homepage": "https://www.xvid.com/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 417792,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/x/xvidcore/xvidcore_1.3.7-1_aarch64.deb",
+        "filename": "xvidcore_1.3.7-1_aarch64.deb",
+        "sha256": "2f358b11fd750935b43ac19f09bb7c4228e007079426e0b73ee8bae1ddf26fc1",
+        "size": 128616
+      }
+    },
+    {
+      "name": "nodejs",
+      "version": "26.13.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++",
+        "openssl",
+        "c-ares",
+        "libicu",
+        "libsqlite",
+        "zlib",
+        "libffi"
+      ],
+      "conflicts": [
+        "nodejs-lts",
+        "nodejs-current"
+      ],
+      "source": {
+        "package": "nodejs",
+        "homepage": "https://nodejs.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/node"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 53002240,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/nodejs/nodejs_26.13.1_aarch64.deb",
+        "filename": "nodejs_26.13.1_aarch64.deb",
+        "sha256": "88351835fcfc5e51799891e42b93e90cf8c0e42793a825e13415e4ee372f3d47",
+        "size": 10686576
+      }
+    },
+    {
+      "name": "c-ares",
+      "version": "1.34.9",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "resolv-conf"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "c-ares",
+        "homepage": "https://c-ares.org/"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 1142784,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/c/c-ares/c-ares_1.34.9_aarch64.deb",
+        "filename": "c-ares_1.34.9_aarch64.deb",
+        "sha256": "623d84855e176f3f2a415d24c0e1d2f529356f4b5439bb3313e6d7ff0da4585c",
+        "size": 200208
+      }
+    },
+    {
+      "name": "libicu",
+      "version": "79.1",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [
+        "libc++"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "libicu",
+        "homepage": "http://site.icu-project.org/home"
+      },
+      "license": "unknown",
+      "entrypoints": [],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 45211648,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/libi/libicu/libicu_79.1_aarch64.deb",
+        "filename": "libicu_79.1_aarch64.deb",
+        "sha256": "83c980a010e957738e3567127801d66a1b9bd7e404a4fda98788048ee57d606c",
+        "size": 10312036
+      }
+    },
+    {
+      "name": "npm",
+      "version": "12.2.3",
+      "architecture": "all",
+      "min_sdk": 24,
+      "dependencies": [
+        "nodejs"
+      ],
+      "conflicts": [],
+      "source": {
+        "package": "npm",
+        "homepage": "https://docs.npmjs.com/cli/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/npm"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 18948096,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/n/npm/npm_12.2.3_all.deb",
+        "filename": "npm_12.2.3_all.deb",
+        "sha256": "b867b6d931c1e6e44e3d038332dd85a0cb7b181690bc82b7f63b5f91e2b95e17",
+        "size": 2072908
+      }
+    },
+    {
+      "name": "uv",
+      "version": "0.13.10",
+      "architecture": "aarch64",
+      "min_sdk": 24,
+      "dependencies": [],
+      "conflicts": [],
+      "source": {
+        "package": "uv",
+        "homepage": "https://docs.astral.sh/uv/"
+      },
+      "license": "unknown",
+      "entrypoints": [
+        "bin/uv"
+      ],
+      "exports": {
+        "path": [
+          "bin"
+        ],
+        "ld_library_path": [
+          "lib"
+        ]
+      },
+      "install_bytes": 35774464,
+      "artifact": {
+        "url": "https://packages.termux.dev/apt/termux-main/pool/main/u/uv/uv_0.13.10_aarch64.deb",
+        "filename": "uv_0.13.10_aarch64.deb",
+        "sha256": "391cfdf9b1c5d1c7510769c63a9973286000a2fc0e55e9d5fe11b59daff1ce3c",
+        "size": 10694676
+      }
+    }
+  ]
+}

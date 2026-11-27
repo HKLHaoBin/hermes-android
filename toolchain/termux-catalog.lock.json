@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "repository": {
+    "name": "termux-main",
+    "base_url": "https://packages.termux.dev/apt/termux-main/",
+    "suite": "stable",
+    "component": "main",
+    "architecture": "aarch64",
+    "inrelease_url": "https://packages.termux.dev/apt/termux-main/dists/stable/InRelease",
+    "packages_index_url": "https://packages.termux.dev/apt/termux-main/dists/stable/main/binary-aarch64/Packages.gz",
+    "inrelease_sha256": "d8493ce8d4d7212718dbbfffecd9069561397a9f804245fdecd2f75961df5198",
+    "inrelease_size": 14016,
+    "packages_index_sha256": "b4aaef0793c95ceec55c043495e4f4fcf25a8aaa86ddd2cef6a8bf8eaba70c42",
+    "packages_index_size": 735432,
+    "key_fingerprint": "CC72CF8BA7DBFA0182877D045A897D96E57CF20C",
+    "keyring_artifact": {
+      "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-keyring/termux-keyring_3.14_all.deb",
+      "filename": "termux-keyring_3.14_all.deb",
+      "sha256": "ff25fc1fa648552ec1349b30f825b983aa65555c1f3bbec87a955dbf189983bb",
+      "size": 44992
+    }
+  },
+  "roots": [
+    "bash",
+    "git",
+    "curl",
+    "wget",
+    "tar",
+    "unzip",
+    "coreutils",
+    "findutils",
+    "ripgrep",
+    "ffmpeg",
+    "python",
+    "nodejs",
+    "npm",
+    "uv"
+  ]
+}
