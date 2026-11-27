@@ -407,6 +407,71 @@ class ToolchainStore:
         retained = self._selection_bytes(active, previous)
         return spec.artifact.size + spec.install_bytes + retained + 16 * 1024 * 1024
 
+    def _selection_status(
+        self,
+        name: str,
+        selected: Any,
+        *,
+        require_current_version: bool = True,
+    ) -> tuple[bool, str]:
+        if not isinstance(selected, dict):
+            return False, "selection record is malformed"
+        try:
+            spec = self.catalog.package(name)
+        except CatalogError:
+            return False, "package is not present in the current catalog"
+        version = selected.get("version")
+        entry_name = selected.get("entry")
+        if not isinstance(version, str) or not version:
+            return False, "selection version is missing"
+        if require_current_version and version != spec.version:
+            return False, f"active version {version} is outdated; catalog requires {spec.version}"
+        if not isinstance(entry_name, str) or not entry_name or "\\" in entry_name:
+            return False, "selection entry is unsafe"
+        try:
+            entry = self._safe_path(self.root, entry_name)
+            expected_root = (self.entries / name).resolve()
+            if not entry.resolve().is_relative_to(expected_root):
+                return False, "selection entry is outside the package slot"
+        except (TransactionError, OSError, ValueError) as exc:
+            return False, f"selection entry is unsafe: {exc}"
+        if not entry.is_dir():
+            return False, "active entry is missing"
+        manifest_path = entry / ".hermes-package.json"
+        try:
+            manifest = _read_json(manifest_path, None)
+        except TransactionError:
+            return False, "package manifest is unreadable"
+        if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+            return False, "package manifest is missing or invalid"
+        if manifest.get("name") != name or manifest.get("version") != version:
+            return False, "package manifest does not match selection"
+        manifest_hash = manifest.get("artifact_sha256")
+        if not isinstance(manifest_hash, str) or not _HEX64.fullmatch(manifest_hash):
+            return False, "package manifest hash is invalid"
+        if require_current_version and manifest_hash != spec.artifact.sha256:
+            return False, "package manifest hash does not match catalog"
+        manifest_entrypoints = manifest.get("entrypoints")
+        if not isinstance(manifest_entrypoints, list) or any(not isinstance(item, str) for item in manifest_entrypoints):
+            return False, "package manifest entrypoints are invalid"
+        if require_current_version and manifest_entrypoints != list(spec.entrypoints):
+            return False, "package manifest entrypoints do not match catalog"
+        for relative in manifest_entrypoints:
+            try:
+                path = self._safe_path(entry, relative)
+            except TransactionError as exc:
+                return False, str(exc)
+            if not path.is_file():
+                return False, f"declared entrypoint missing: {relative}"
+            try:
+                # Windows does not preserve POSIX executable mode bits; Android
+                # runs on POSIX and enforces the bit during real activation.
+                if os.name != "nt" and not (path.stat().st_mode & stat.S_IXUSR):
+                    return False, f"declared entrypoint is not executable: {relative}"
+            except OSError:
+                return False, f"declared entrypoint cannot be inspected: {relative}"
+        return True, ""
+
     def _acquire_transaction(self) -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
         lock = self.root / ".transaction.lock"
@@ -460,7 +525,10 @@ class ToolchainStore:
         ]
         if conflicts:
             raise PreflightError(f"package conflicts with active package: {', '.join(sorted(conflicts))}")
-        missing = [dep for dep in spec.dependencies if dep not in active]
+        missing = [
+            dep for dep in spec.dependencies
+            if not self._selection_status(dep, active.get(dep))[0]
+        ]
         if missing:
             raise PreflightError(f"dependency not installed: {', '.join(missing)}")
         required = self._required_bytes(spec, active, state["previous"])
@@ -651,6 +719,16 @@ class ToolchainStore:
             except OSError as exc:
                 raise TransactionError(f"cannot make entrypoint executable: {relative}") from exc
 
+    def _write_manifest(self, spec: PackageSpec, entry: Path) -> None:
+        _atomic_json(entry / ".hermes-package.json", {
+            "schema_version": 1,
+            "name": spec.name,
+            "version": spec.version,
+            "artifact_sha256": spec.artifact.sha256,
+            "target": self.catalog.target["triple"],
+            "entrypoints": list(spec.entrypoints),
+        })
+
     def _facts(self, active: dict[str, Any]) -> dict[str, Any]:
         rows = {}
         for name, selected in sorted(active.items()):
@@ -685,11 +763,13 @@ class ToolchainStore:
 
     def install(self, name: str, archive: Path | None, host: HostFacts) -> dict[str, Any]:
         with self._lock:
-            spec = self.preflight(name, host)
-            if archive is not None:
-                self._verify_artifact(spec, Path(archive))
             transaction_lock = self._acquire_transaction()
             try:
+                # The cross-process lock must cover preflight and commit. Otherwise
+                # another writer can change dependencies/conflicts after preflight.
+                spec = self.preflight(name, host)
+                if archive is not None:
+                    self._verify_artifact(spec, Path(archive))
                 before = self._state()
                 transaction = self.staging / uuid.uuid4().hex
                 stage = transaction / "package"
@@ -710,6 +790,7 @@ class ToolchainStore:
                     self._verify_artifact(spec, source)
                     self._extract(source, stage)
                     self._validate_entry(spec, stage)
+                    self._write_manifest(spec, stage)
                     entry.parent.mkdir(parents=True, exist_ok=True)
                     if entry.exists():
                         shutil.rmtree(entry)
@@ -764,8 +845,8 @@ class ToolchainStore:
         result = self.inventory(host)
         for package_name in order:
             active = self._state()["active"].get(package_name)
-            entry_name = active.get("entry") if isinstance(active, dict) else None
-            if isinstance(entry_name, str) and (self.root / entry_name).is_dir():
+            valid, _ = self._selection_status(package_name, active)
+            if valid:
                 continue
             archive = archives.get(package_name) if archives else None
             result = self.install(package_name, archive, host)
@@ -816,9 +897,10 @@ class ToolchainStore:
                 previous = state["previous"]
                 if not previous:
                     raise TransactionError("no rollback selection is available")
-                for selected in previous.values():
-                    if not (self.root / selected["entry"]).is_dir():
-                        raise TransactionError("rollback entry is missing")
+                for name, selected in previous.items():
+                    valid, reason = self._selection_status(name, selected, require_current_version=False)
+                    if not valid:
+                        raise TransactionError(f"rollback entry is invalid for {name}: {reason}")
                 self._commit(previous, state["active"], "rollback")
                 return {"active": previous, "previous": state["active"]}
             finally:
@@ -832,12 +914,13 @@ class ToolchainStore:
             spec = self.catalog.package(name)
             reason = ""
             if name in active:
-                selected = active[name]
-                entry_name = selected.get("entry") if isinstance(selected, dict) else None
-                if not isinstance(entry_name, str) or not (self.root / entry_name).is_dir():
-                    status, reason = "corrupt", "active entry is missing"
-                else:
+                valid, reason = self._selection_status(name, active[name])
+                if valid:
                     status = "active"
+                elif "outdated" in reason:
+                    status = "outdated"
+                else:
+                    status = "corrupt"
             elif host.abi != self.catalog.target["abi"]:
                 status, reason = "unsupported", "ABI mismatch"
             elif host.api < max(self.catalog.target["min_sdk"], spec.min_sdk):
@@ -845,7 +928,10 @@ class ToolchainStore:
             elif host.libc != self.catalog.target["libc"]:
                 status, reason = "unsupported", "libc mismatch"
             else:
-                missing = [dep for dep in spec.dependencies if dep not in active]
+                missing = [
+                    dep for dep in spec.dependencies
+                    if not self._selection_status(dep, active.get(dep))[0]
+                ]
                 conflicts = [
                     package_name
                     for package_name in active

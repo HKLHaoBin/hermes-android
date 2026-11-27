@@ -316,6 +316,71 @@ class AndroidToolchainTests(unittest.TestCase):
         self.assertEqual(result["active"]["libfoo"]["version"], "1.0.0")
         self.assertEqual(result["active"]["tool"]["version"], "1.0.0")
 
+    def test_inventory_marks_old_active_version_and_install_closure_refreshes_it(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        store.install("libfoo", lib, self.host())
+
+        updated_doc = catalog.to_dict()
+        updated_doc["packages"][0]["version"] = "2.0.0"
+        updated_catalog = Catalog.from_dict(updated_doc)
+        updated_store = ToolchainStore(self.root / "tools", updated_catalog)
+        row = next(item for item in updated_store.inventory(self.host())["packages"] if item["name"] == "libfoo")
+        self.assertEqual(row["state"], "outdated")
+        refreshed = updated_store.install_closure(["libfoo"], self.host(), {"libfoo": lib})
+        self.assertEqual(refreshed["active"]["libfoo"]["version"], "2.0.0")
+
+    def test_inventory_marks_deleted_entrypoint_and_install_closure_reinstalls_it(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        store.install("libfoo", lib, self.host())
+        store.install("tool", tool, self.host())
+        entry = Path(self.root / "tools" / store.inventory(self.host())["active"]["tool"]["entry"])
+        (entry / "bin/tool").unlink()
+        row = next(item for item in store.inventory(self.host())["packages"] if item["name"] == "tool")
+        self.assertEqual(row["state"], "corrupt")
+        refreshed = store.install_closure(["tool"], self.host(), {"tool": tool})
+        self.assertEqual(refreshed["active"]["tool"]["version"], "1.0.0")
+        self.assertEqual(next(item for item in refreshed["packages"] if item["name"] == "tool")["state"], "active")
+
+    def test_install_acquires_cross_process_lock_before_preflight(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        events = []
+        acquire = store._acquire_transaction
+        preflight = store.preflight
+
+        def observed_acquire():
+            lock = acquire()
+            events.append("lock")
+            return lock
+
+        def observed_preflight(*args, **kwargs):
+            events.append("preflight")
+            self.assertTrue((store.root / ".transaction.lock").is_dir())
+            return preflight(*args, **kwargs)
+
+        with patch.object(store, "_acquire_transaction", side_effect=observed_acquire), patch.object(
+            store, "preflight", side_effect=observed_preflight
+        ):
+            store.install("libfoo", lib, self.host())
+        self.assertEqual(events[:2], ["lock", "preflight"])
+
     def test_inventory_is_versioned_queryable_and_truthful(self):
         _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
         _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")

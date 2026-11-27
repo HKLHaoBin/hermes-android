@@ -42,7 +42,7 @@
 - 工具链目标为 `linux-arm64-bionic` / `arm64-v8a` / Android API 24+，包状态位于 `filesDir/tools`，不申请 root 或「管理所有文件」权限。
 - Termux `aarch64` 包源、InRelease/Packages 索引、key fingerprint、版本、大小和 SHA-256 由 `toolchain/termux-catalog.lock.json` 锁定；构建时用 `gpgv` 验证后生成目录，不信任任意 URL 或“latest”。
 - 支持隔离安装、更新、删除、回滚、依赖状态和可查询 inventory。安装前会拒绝 ABI/API/libc、权限、磁盘空间、依赖、入口文件或包完整性不满足的请求；安装过程不会执行包内容或写入用户数据。
-- `/__android/status.json` 和 `/__android/toolchain.json` 返回版本化工具链与 capability 状态。`active` 只表示已验证并激活的条目；`available`、`blocked`、`unsupported`、`corrupt` 会保留原因。
+- `/__android/status.json` 和 `/__android/toolchain.json` 返回版本化工具链与 capability 状态。`active` 只表示已验证并激活的条目；`available`、`blocked`、`unsupported`、`outdated`、`corrupt` 会保留原因。
 - 具体状态目录、删除语义、回滚规则和 CI 验证见 [`docs/android-toolchain.md`](docs/android-toolchain.md)。Android 容器 smoke 不是手机真机验收。
 
 ## 构建和验证

@@ -16,6 +16,7 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         cls.runtime_env = (KOTLIN / "RuntimeEnv.kt").read_text(encoding="utf-8")
         cls.relocator = (ROOT / "scripts/relocate_payload.py").read_text(encoding="utf-8")
         cls.smoke = (ROOT / "scripts/smoke.sh").read_text(encoding="utf-8")
+        cls.workflow = (ROOT / ".github/workflows/build-apk.yml").read_text(encoding="utf-8")
         cls.catalog = json.loads(
             (ROOT / "android/app/src/main/assets/toolchain/catalog.json").read_text(encoding="utf-8")
         )
@@ -76,6 +77,12 @@ class AndroidToolchainSourceTests(unittest.TestCase):
     def test_container_smoke_exercises_locked_dependency_closure(self):
         self.assertIn("install-closure", self.smoke)
         self.assertIn("TOOLCHAIN_INSTALL_OK", self.smoke)
+
+    def test_workflow_preserves_job_ledger_and_adds_toolchain_contracts(self):
+        self.assertIn("scripts/test_job_ledger_contract.py", self.workflow)
+        self.assertIn("scripts/test_job_ledger_source.py", self.workflow)
+        self.assertIn("scripts/test_android_toolchain.py", self.workflow)
+        self.assertIn("scripts/test_termux_catalog.py", self.workflow)
 
 
 if __name__ == "__main__":

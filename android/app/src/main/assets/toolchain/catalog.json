@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_id": "termux-main-aarch64-72e9c19f7c2d",
+  "catalog_id": "termux-main-aarch64-d8493ce8d4d7",
   "target": {
     "triple": "linux-arm64-bionic",
     "abi": "arm64-v8a",
@@ -13,10 +13,10 @@
     "suite": "stable",
     "component": "main",
     "architecture": "aarch64",
-    "inrelease_sha256": "72e9c19f7c2d8b2bb3c90a5376f63790545ed2ac47302dfa6326c72aa77ac6ac",
+    "inrelease_sha256": "d8493ce8d4d7212718dbbfffecd9069561397a9f804245fdecd2f75961df5198",
     "inrelease_size": 14016,
-    "packages_index_sha256": "c611c78c1417580f59f36102944cd662dc67f8096a482787c315e53c112e5e05",
-    "packages_index_size": 736518,
+    "packages_index_sha256": "b4aaef0793c95ceec55c043495e4f4fcf25a8aaa86ddd2cef6a8bf8eaba70c42",
+    "packages_index_size": 735432,
     "key_fingerprint": "CC72CF8BA7DBFA0182877D045A897D96E57CF20C",
     "keyring_artifact": {
       "url": "https://packages.termux.dev/apt/termux-main/pool/main/t/termux-keyring/termux-keyring_3.14_all.deb",

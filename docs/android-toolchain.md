@@ -15,7 +15,7 @@ Store layout
 The package manager uses the app-private root `filesDir/tools`:
 
 - `catalog.json`: the verified catalog copied from APK assets.
-- `entries/<package>/<version>[-generation]/`: immutable extracted package entries; filesystem-unsafe version characters are percent-encoded in the directory name.
+- `entries/<package>/<version>[-generation]/`: immutable extracted package entries; filesystem-unsafe version characters are percent-encoded in the directory name. Each entry contains a generated `.hermes-package.json` manifest with the catalog version, artifact hash, and declared entrypoints.
 - `.staging/<transaction>/`: disposable extraction staging.
 - `state.json`: the atomic active/previous selection and materialized facts.
 - `active.json` and `previous.json`: query/debug projections.
@@ -34,7 +34,7 @@ The payload-side `android_toolchain.py` supports `inventory`, `preflight`, `inst
 - `update` keeps the old active entry as the previous selection. Reinstalling a version never deletes a path referenced by active or previous state.
 - `remove` removes the selected package and recursively drops dependencies that are no longer referenced by another active package. Immutable entry data remains available for repair/rollback.
 - `rollback` swaps active and previous selections only when every previous entry is present.
-- Inventory distinguishes `active`, `available`, `blocked`, `unsupported`, and `corrupt`; a catalog declaration is not reported as executable device capability without installed/host evidence.
+- Inventory distinguishes `active`, `available`, `blocked`, `unsupported`, `outdated`, and `corrupt`; a catalog declaration is not reported as executable device capability without installed/host evidence.
 
 Android integration
 
