@@ -223,6 +223,7 @@ _KNOWN_PRECONDITION_PATTERN = (
     r"[oO][pP][eE][rR][aA][tT][oO][rR]-[sS][eE][tT]-[bB][eE][fF][oO][rR][eE]-[rR][uU][nN])(?:$|[-_\s]))"
     r"(?=\S)(?=.*\S$).+(?![\s\S])"
 )
+_KNOWN_IDENTITY_PATTERN = _KNOWN_PRECONDITION_PATTERN
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -257,7 +258,7 @@ def _non_empty(value: Any, name: str, errors: list[str]) -> None:
 
 def _known_identity(value: Any, name: str, errors: list[str]) -> None:
     _non_empty(value, name, errors)
-    if isinstance(value, str) and value.strip().lower() in _UNKNOWN_LITERALS:
+    if isinstance(value, str) and not re.fullmatch(_KNOWN_IDENTITY_PATTERN, value):
         errors.append(f"{name} must contain a captured identity, not {value!r}")
 
 
@@ -378,6 +379,39 @@ def _evidence_content_findings(data: bytes, path: str, serial_sha256: str | None
     return findings + _redaction_findings(parsed, path)
 
 
+_SERIAL_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{3,127}")
+
+
+def _serial_digest_matches(value: str, serial_sha256: str) -> bool:
+    candidates = (value, *_SERIAL_TOKEN.findall(value))
+    return any(hashlib.sha256(candidate.encode("utf-8")).hexdigest() == serial_sha256 for candidate in candidates)
+
+
+def _receipt_serial_findings(receipt: Any) -> list[str]:
+    if not isinstance(receipt, dict):
+        return []
+    device = receipt.get("device")
+    if not isinstance(device, dict):
+        return []
+    serial_sha256 = device.get("serial_sha256")
+    if not isinstance(serial_sha256, str) or not _SHA256.fullmatch(serial_sha256):
+        return []
+    findings: list[str] = []
+
+    def visit(value: Any, path: str) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                visit(child, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                visit(child, f"{path}[{index}]")
+        elif isinstance(value, str) and _serial_digest_matches(value, serial_sha256):
+            findings.append(f"redaction: {path}: metadata contains the raw device serial represented by serial_sha256")
+
+    visit(receipt, "$")
+    return findings
+
+
 def _relative_evidence_path(path: str) -> bool:
     return _EVIDENCE_PATH.fullmatch(path) is not None
 
@@ -477,7 +511,7 @@ def _validate_apk(value: Any, name: str, errors: list[str]) -> bool:
     ):
         return False
     for field in ("filename", "application_id", "version_name"):
-        _non_empty(value.get(field), f"{name}.{field}", errors)
+        _known_identity(value.get(field), f"{name}.{field}", errors)
     _sha(value.get("sha256"), f"{name}.sha256", errors)
     _sha(value.get("signer_sha256"), f"{name}.signer_sha256", errors)
     if type(value.get("size_bytes")) is not int or value["size_bytes"] <= 0:
@@ -503,7 +537,7 @@ def _validate_installed_apk(value: Any, name: str, errors: list[str]) -> bool:
             errors.append(f"{name}.package_path must be an installed Android package APK path")
     _sha(value.get("sha256"), f"{name}.sha256", errors)
     for field in ("application_id", "version_name"):
-        _non_empty(value.get(field), f"{name}.{field}", errors)
+        _known_identity(value.get(field), f"{name}.{field}", errors)
     if type(value.get("size_bytes")) is not int or value["size_bytes"] <= 0:
         errors.append(f"{name}.size_bytes must be a positive integer")
     if type(value.get("version_code")) is not int or value["version_code"] <= 0:
@@ -874,8 +908,12 @@ def validate_device(device: Any) -> list[str]:
         errors.append("device.api_level must be one of 33, 34, 35, 36")
     _sha(device.get("serial_sha256"), "device.serial_sha256", errors)
     _non_empty(device.get("serial_suffix"), "device.serial_suffix", errors)
-    if isinstance(device.get("serial_suffix"), str) and len(device["serial_suffix"]) > 8:
-        errors.append("device.serial_suffix must be at most 8 characters")
+    if isinstance(device.get("serial_suffix"), str):
+        if len(device["serial_suffix"]) > 8:
+            errors.append("device.serial_suffix must be at most 8 characters")
+        serial_sha256 = device.get("serial_sha256")
+        if isinstance(serial_sha256, str) and _SHA256.fullmatch(serial_sha256) and _serial_digest_matches(device["serial_suffix"], serial_sha256):
+            errors.append("device.serial_suffix must not contain the complete raw device serial")
     if not isinstance(device.get("authorized"), bool) or not device.get("authorized"):
         errors.append("device.authorized must be true for a hardware receipt")
     if device.get("is_emulator") is not False:
@@ -1033,6 +1071,7 @@ def validate_receipt(
     check_evidence: bool = False,
 ) -> list[str]:
     errors = _redaction_findings(receipt)
+    errors.extend(_receipt_serial_findings(receipt))
     required = {
         "receipt_kind",
         "schema_version",
@@ -1063,7 +1102,7 @@ def validate_receipt(
         allowed={"id", "authorization_ref"},
         errors=errors,
     ):
-        _non_empty(operator.get("id"), "operator.id", errors)
+        _known_identity(operator.get("id"), "operator.id", errors)
         _known_identity(operator.get("authorization_ref"), "operator.authorization_ref", errors)
     errors.extend(validate_device(receipt.get("device")))
     errors.extend(validate_artifact(receipt.get("artifact")))
@@ -1450,10 +1489,17 @@ def _battery_optimization(adb: str, serial: str, package: str) -> tuple[str, str
     try:
         raw = _run_adb(adb, serial, "shell", "dumpsys", "deviceidle")
     except BlockedError:
-        return "unknown", "unknown"
-    if package in raw:
+        return "unknown", "unknown: deviceidle query failed"
+    package_pattern = re.compile(rf"(?<![A-Za-z0-9_.]){re.escape(package)}(?![A-Za-z0-9_.])")
+    if package_pattern.search(raw):
         return "exempt", "reported-by-deviceidle"
-    return "unknown", "reported-by-deviceidle"
+    try:
+        whitelist = _run_adb(adb, serial, "shell", "dumpsys", "deviceidle", "whitelist")
+    except BlockedError:
+        return "unknown", "unknown: authoritative deviceidle whitelist query failed"
+    if package_pattern.search(whitelist):
+        return "exempt", "reported-by-deviceidle-whitelist"
+    return "optimized", "reported-by-deviceidle-whitelist-absent"
 
 
 def _network_mode(adb: str, serial: str) -> str:
@@ -1519,6 +1565,8 @@ def capture_receipt(
     assert serial is not None
     if _is_emulator_serial(serial):
         raise BlockedError(f"ADB serial identifies an emulator/test endpoint: {serial}")
+    if len(serial) <= 8:
+        raise BlockedError("ADB serial is too short to store a non-identifying serial suffix")
 
     props = _parse_getprop(_run_adb(adb, serial, "shell", "getprop"))
     qemu_values = [props.get(key, "").strip().lower() for key in ("ro.kernel.qemu", "ro.boot.qemu", "ro.boot.emulator")]
@@ -1735,28 +1783,52 @@ def evaluate_gate(
 ) -> dict[str, Any]:
     reasons: list[str] = []
     slot_reports: list[dict[str, Any]] = []
+    optional_slots: list[dict[str, Any]] = []
+    optional_failures: list[dict[str, Any]] = []
     valid_receipts: dict[str, dict[str, Any]] = {}
-    has_fail = False
+    required_has_fail = False
+    slots_by_id = {slot["slot_id"]: slot for slot in matrix["slots"]}
     if receipt_roots is None or len(receipt_roots) != len(receipts):
         reasons.append("receipt evidence roots are required for release-gate validation")
         receipt_roots = [Path("")] * len(receipts)
     for index, receipt in enumerate(receipts):
         root = receipt_roots[index]
+        candidate_slot_id = receipt.get("device", {}).get("slot_id") if isinstance(receipt, dict) and isinstance(receipt.get("device"), dict) else None
+        candidate_slot = slots_by_id.get(candidate_slot_id)
         if not root or not root.is_dir():
             errors = ["receipt evidence root is missing or is not a directory"]
         else:
             errors = validate_receipt(receipt, matrix, receipt_root=root, check_evidence=True)
             errors.extend(validate_release_artifact(receipt.get("artifact")))
         if errors:
-            reasons.extend(f"receipt[{index}]: {error}" for error in errors)
+            if candidate_slot is not None and not candidate_slot["required"]:
+                report = {"slot_id": candidate_slot_id, "status": "BLOCKED", "reasons": errors}
+                optional_slots.append(report)
+                optional_failures.append(report)
+            else:
+                reasons.extend(f"receipt[{index}]: {error}" for error in errors)
             continue
         slot_id = receipt["device"]["slot_id"]
+        slot = slots_by_id.get(slot_id)
+        if slot is None:
+            reasons.append(f"receipt[{index}]: unknown matrix slot: {slot_id}")
+            continue
         if slot_id in valid_receipts:
-            reasons.append(f"duplicate receipt for slot: {slot_id}")
+            if slot["required"]:
+                reasons.append(f"duplicate receipt for slot: {slot_id}")
+            else:
+                report = {"slot_id": slot_id, "status": "BLOCKED", "reasons": [f"duplicate receipt for slot: {slot_id}"]}
+                optional_slots.append(report)
+                optional_failures.append(report)
             continue
         valid_receipts[slot_id] = receipt
-        if receipt["aggregate_status"] == "FAIL":
-            has_fail = True
+        if not slot["required"]:
+            report = {"slot_id": slot_id, "status": receipt["aggregate_status"], "receipt_id": receipt["receipt_id"]}
+            optional_slots.append(report)
+            if receipt["aggregate_status"] != "PASS":
+                optional_failures.append({**report, "reason": f"optional slot aggregate status is {receipt['aggregate_status']}"})
+        elif receipt["aggregate_status"] == "FAIL":
+            required_has_fail = True
     for slot in matrix["slots"]:
         if not slot["required"]:
             continue
@@ -1791,7 +1863,7 @@ def evaluate_gate(
                     "required device receipts have mixed artifact identity; "
                     f"slot {receipt['device']['slot_id']} does not match the first required receipt"
                 )
-    if has_fail:
+    if required_has_fail:
         status = "FAIL"
     elif reasons:
         status = "BLOCKED"
@@ -1805,6 +1877,8 @@ def evaluate_gate(
         "eligible": status == "PASS",
         "reasons": reasons,
         "slots": slot_reports,
+        "optional_slots": optional_slots,
+        "optional_failures": optional_failures,
     }
 
 

@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from android_device_matrix import HarnessError, load_json, sha256_file, validate_artifact
+from android_device_matrix import HarnessError, load_json, sha256_file, validate_release_artifact
 
 
 _PACKAGE_BADGING = re.compile(
@@ -85,9 +85,9 @@ def verify_manifest(
     head_sha: str,
 ) -> dict[str, Any]:
     manifest = load_json(manifest_path)
-    errors = validate_artifact(manifest)
+    errors = validate_release_artifact(manifest)
     if errors:
-        raise HarnessError("invalid artifact manifest:\n- " + "\n- ".join(errors))
+        raise HarnessError("invalid canonical release artifact manifest:\n- " + "\n- ".join(errors))
 
     build = manifest["build"]
     _compare(errors, "build.repository", build["repository"], repository)

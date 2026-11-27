@@ -70,7 +70,7 @@ A receipt aggregate is derived from its tests:
 3. otherwise any `NOT RUN` -> `NOT RUN`;
 4. only all `PASS` -> `PASS`.
 
-The gate requires every required M0 API slot, the required `Large-screen` slot, and all 35 test IDs to be `PASS`. It passes each receipt's `receipt_root` to validation and checks evidence file existence, non-zero size, content redaction and SHA-256 before eligibility. It also requires one identical APK/build/runtime/WebUI/payload artifact identity across all required slots and rejects any repository/workflow/artifact/APK filename outside the canonical Actions provenance. Missing receipts, duplicate slot receipts, mismatched API/OEM/ABI, invalid identity, `BLOCKED`, `NOT RUN`, missing or zero-byte evidence, arbitrary PASS observations, hash mismatches or mixed artifacts are not release-ready states.
+The gate requires every required M0 API slot, the required `Large-screen` slot, and all 35 test IDs to be `PASS`. It passes each receipt's `receipt_root` to validation and checks evidence file existence, non-zero size, content redaction and SHA-256 before eligibility. It also requires one identical APK/build/runtime/WebUI/payload artifact identity across all required slots and rejects any repository/workflow/artifact/APK filename outside the canonical Actions provenance. Missing receipts, duplicate slot receipts, mismatched API/OEM/ABI, invalid identity, `BLOCKED`, `NOT RUN`, missing or zero-byte evidence, arbitrary PASS observations, hash mismatches or mixed artifacts are not release-ready states. `OEM-stress` is an optional slot: if present, its `FAIL`/`BLOCKED`/`NOT RUN` result is retained in `optional_failures` and reported separately, but it does not change the required-slot release status.
 
 Failure classes are `app`, `service`, `job`, `notification`, `webview`, `network`, `oem`, `artifact`, `device`, `operator`, and `unknown`.
 
@@ -87,7 +87,7 @@ Device identity includes:
 - `is_emulator=false` and a physical `transport` (`usb` or `tcpip`);
 - WebView package, exact version and provider;
 - display width/height/density, default IME, TalkBack state;
-- known battery optimization/OEM policy, known notification permission and controlled backend ID. Unknown values block capture and release eligibility.
++- known battery optimization/OEM policy, known notification permission and controlled backend ID. Unknown values block capture and release eligibility. Battery optimization uses the device-idle exemption list: a listed package is `exempt`; an authoritative successful query showing it absent is `optimized`; a failed query is `unknown`.
 
 Artifact identity includes:
 
@@ -151,7 +151,7 @@ The receipt may not contain:
 - raw device serials;
 - complete user messages, provider credentials or session contents.
 
-The validator rejects secret-like field names and values, raw `serial`, bearer strings, private-key headers and common credential assignments. JSON evidence is parsed before recursive field-name scanning, including nested and escaped keys. Text evidence uses the same credential/serial-assignment policy, rejects raw ADB serial listings and `adb -s` commands, and checks candidate serial tokens against the receipt's serial digest. Evidence cannot escape its receipt directory through a relative path or symlink. The receipt records only `serial_sha256`, `serial_suffix`, authorization reference, structured device state and evidence hashes. Evidence files must be scrubbed before they are referenced. `raw_serial_stored=false`, `secrets_stored=false`, and `patterns_checked=true` are mandatory receipt fields.
+The validator rejects secret-like field names and values, raw `serial`, bearer strings, private-key headers and common credential assignments. JSON evidence is parsed before recursive field-name scanning, including nested and escaped keys. Text evidence uses the same credential/serial-assignment policy, rejects raw ADB serial listings and `adb -s` commands, and checks candidate serial tokens against the receipt's serial digest. Receipt metadata string values are checked against the same serial digest, so an allowed field such as `device_id` cannot carry the raw serial beside `serial_sha256`; a suffix that hashes to the full serial is also rejected. Devices with serials of eight or fewer characters are blocked because no non-identifying suffix can be emitted. Evidence cannot escape its receipt directory through a relative path or symlink. The receipt records only `serial_sha256`, a non-identifying `serial_suffix`, authorization reference, structured device state and evidence hashes. Evidence files must be scrubbed before they are referenced. `raw_serial_stored=false`, `secrets_stored=false`, and `patterns_checked=true` are mandatory receipt fields.
 
 ## Hardware capture
 
@@ -229,7 +229,7 @@ Identity digests use SHA-256 over UTF-8 `json.dumps(value, ensure_ascii=True, so
 
 These are structured operator/lab observations, not cryptographic attestation of physical execution. The authorized evidence producer must run the scenario and retain supporting observations. Unit fixtures test validation only and must never be submitted as hardware receipts. No helper in this branch turns absent hardware into a PASS.
 
-The JSON Schema is the portable structural/lexical receipt contract, including every required test ID exactly once and each test's fixed expected/PASS-observed values and permitted evidence kinds. The executable validator additionally checks contextual relationships (matching sibling identities, computed dimensions, event ordering) and external files, which standard JSON Schema cannot compare/read. `test_android_device_schema.py` checks accepted and rejected precondition/hash/timestamp/capability boundary values and the per-test catalog in both paths; it is not a hardware test.
+The JSON Schema is the portable structural/lexical receipt contract, including every required test ID exactly once, each test's fixed expected/PASS-observed values and permitted evidence kinds, and the same known-identity placeholder language used by the executable validator for device, WebView, operator, artifact, runtime and installed-package strings. The executable validator additionally checks contextual relationships (matching sibling identities, computed dimensions, event ordering) and external files, which standard JSON Schema cannot compare/read. `test_android_device_schema.py` checks accepted and rejected precondition/hash/timestamp/capability/identity boundary values and the per-test catalog in both paths; it is not a hardware test.
 
 Validate one receipt:
 

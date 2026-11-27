@@ -103,8 +103,8 @@
       "additionalProperties": false,
       "required": ["id", "authorization_ref"],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "authorization_ref": { "type": "string", "minLength": 1 }
+        "id": { "$ref": "#/$defs/known_precondition" },
+        "authorization_ref": { "$ref": "#/$defs/known_precondition" }
       }
     },
     "webview": {
@@ -112,9 +112,9 @@
       "additionalProperties": false,
       "required": ["package", "version", "provider"],
       "properties": {
-        "package": { "type": "string", "minLength": 1 },
-        "version": { "type": "string", "minLength": 1 },
-        "provider": { "type": "string", "minLength": 1 }
+        "package": { "$ref": "#/$defs/known_precondition" },
+        "version": { "$ref": "#/$defs/known_precondition" },
+        "provider": { "$ref": "#/$defs/known_precondition" }
       }
     },
     "device": {
@@ -147,21 +147,21 @@
         "network"
       ],
       "properties": {
-        "slot_id": { "type": "string", "minLength": 1 },
-        "device_id": { "type": "string", "minLength": 1 },
-        "manufacturer": { "type": "string", "minLength": 1 },
-        "model": { "type": "string", "minLength": 1 },
-        "oem": { "type": "string", "minLength": 1 },
-        "oem_skin": { "type": "string", "minLength": 1 },
+        "slot_id": { "$ref": "#/$defs/known_precondition" },
+        "device_id": { "$ref": "#/$defs/known_precondition" },
+        "manufacturer": { "$ref": "#/$defs/known_precondition" },
+        "model": { "$ref": "#/$defs/known_precondition" },
+        "oem": { "$ref": "#/$defs/known_precondition" },
+        "oem_skin": { "$ref": "#/$defs/known_precondition" },
         "abi": { "const": "arm64-v8a" },
-        "android_release": { "type": "string", "minLength": 1 },
+        "android_release": { "$ref": "#/$defs/known_precondition" },
         "api_level": { "type": "integer", "enum": [33, 34, 35, 36] },
-        "build_fingerprint": { "type": "string", "minLength": 1 },
-        "security_patch_level": { "type": "string", "minLength": 1 },
+        "build_fingerprint": { "$ref": "#/$defs/known_precondition" },
+        "security_patch_level": { "$ref": "#/$defs/known_precondition" },
         "serial_sha256": { "$ref": "#/$defs/sha256" },
         "serial_suffix": { "type": "string", "minLength": 1, "maxLength": 8 },
         "authorized": { "const": true },
-        "authorization_ref": { "type": "string", "minLength": 1 },
+        "authorization_ref": { "$ref": "#/$defs/known_precondition" },
         "is_emulator": { "const": false },
         "transport": { "type": "string", "enum": ["usb", "tcpip"] },
         "webview": { "$ref": "#/$defs/webview" },
@@ -227,11 +227,11 @@
           "additionalProperties": false,
           "required": ["filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"],
           "properties": {
-            "filename": { "type": "string", "minLength": 1 },
+            "filename": { "$ref": "#/$defs/known_precondition" },
             "sha256": { "$ref": "#/$defs/sha256" },
             "size_bytes": { "type": "integer", "minimum": 1 },
-            "application_id": { "type": "string", "minLength": 1 },
-            "version_name": { "type": "string", "minLength": 1 },
+            "application_id": { "$ref": "#/$defs/known_precondition" },
+            "version_name": { "$ref": "#/$defs/known_precondition" },
             "version_code": { "type": "integer", "minimum": 1 },
             "signer_sha256": { "$ref": "#/$defs/sha256" }
           }
@@ -241,9 +241,9 @@
           "additionalProperties": false,
           "required": ["repository", "workflow", "artifact_name", "run_id", "head_sha"],
           "properties": {
-            "repository": { "type": "string", "minLength": 1 },
-            "workflow": { "type": "string", "minLength": 1 },
-            "artifact_name": { "type": "string", "minLength": 1 },
+            "repository": { "$ref": "#/$defs/known_precondition" },
+            "workflow": { "$ref": "#/$defs/known_precondition" },
+            "artifact_name": { "$ref": "#/$defs/known_precondition" },
             "run_id": { "type": "string", "pattern": "^[0-9]+$" },
             "head_sha": { "$ref": "#/$defs/sha1" }
           }
@@ -253,10 +253,10 @@
           "additionalProperties": false,
           "required": ["version", "sha256", "source_commit", "payload_id"],
           "properties": {
-            "version": { "type": "string", "minLength": 1 },
+            "version": { "$ref": "#/$defs/known_precondition" },
             "sha256": { "$ref": "#/$defs/sha256" },
             "source_commit": { "$ref": "#/$defs/sha1" },
-            "payload_id": { "type": "string", "minLength": 1 }
+            "payload_id": { "$ref": "#/$defs/known_precondition" }
           }
         },
         "webui_revision": { "$ref": "#/$defs/sha1" }
@@ -366,8 +366,8 @@
             "package_path": { "$ref": "#/$defs/installed_path", "description": "Path returned by adb shell pm path for the installed package; its content/version fields must match artifact.apk." },
             "sha256": { "$ref": "#/$defs/sha256" },
             "size_bytes": { "type": "integer", "minimum": 1 },
-            "application_id": { "type": "string", "minLength": 1 },
-            "version_name": { "type": "string", "minLength": 1 },
+            "application_id": { "$ref": "#/$defs/known_precondition" },
+            "version_name": { "$ref": "#/$defs/known_precondition" },
             "version_code": { "type": "integer", "minimum": 1 }
           }
         },

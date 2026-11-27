@@ -72,6 +72,36 @@ class ReceiptSchemaParityTests(unittest.TestCase):
                 del receipt["preconditions"][field][missing]
                 self.assert_both(receipt, False)
 
+    def test_identity_placeholders_are_rejected_by_schema_and_runtime_for_each_identity_class(self):
+        paths = (
+            ("operator", "id"),
+            ("operator", "authorization_ref"),
+            ("device", "device_id"),
+            ("device", "model"),
+            ("device", "webview", "package"),
+            ("device", "webview", "version"),
+            ("device", "webview", "provider"),
+            ("artifact", "apk", "filename"),
+            ("artifact", "apk", "application_id"),
+            ("artifact", "apk", "version_name"),
+            ("artifact", "build", "repository"),
+            ("artifact", "build", "workflow"),
+            ("artifact", "build", "artifact_name"),
+            ("artifact", "runtime", "version"),
+            ("artifact", "runtime", "payload_id"),
+            ("tests", 0, "installed_apk", "application_id"),
+            ("tests", 0, "installed_apk", "version_name"),
+        )
+        for path in paths:
+            for value in ("unknown", "UNKNOWN", "n/a", "none", "unset", "fixture", "mock", "not available"):
+                with self.subTest(path=path, value=value):
+                    receipt = receipt_fixture()
+                    target = receipt
+                    for key in path[:-1]:
+                        target = target[key]
+                    target[path[-1]] = value
+                    self.assert_both(receipt, False)
+
     def test_all_hash_boundaries_reject_uppercase_whitespace_and_wrong_length(self):
         paths = (
             ("artifact", "apk", "sha256"), ("artifact", "apk", "signer_sha256"),
@@ -103,6 +133,7 @@ class ReceiptSchemaParityTests(unittest.TestCase):
 
     def test_precondition_and_path_regexes_are_shared_exactly(self):
         self.assertEqual(self.schema["$defs"]["known_precondition"]["pattern"], matrix._KNOWN_PRECONDITION_PATTERN)
+        self.assertEqual(self.schema["$defs"]["known_precondition"]["pattern"], matrix._KNOWN_IDENTITY_PATTERN)
         self.assertEqual(self.schema["$defs"]["installed_path"]["pattern"], matrix._INSTALLED_PATH.pattern)
         self.assertEqual(self.schema["$defs"]["evidence"]["properties"]["path"]["pattern"], matrix._EVIDENCE_PATH.pattern)
 

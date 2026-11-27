@@ -469,6 +469,41 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             self.assertEqual(result["status"], "PASS")
             self.assertTrue(result["eligible"])
 
+    def test_optional_failures_are_reported_without_blocking_required_release_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipts = []
+            roots = []
+            for slot in (item for item in matrix.REQUIRED_SLOTS if item["required"]):
+                slot_root = root / slot["slot_id"]
+                receipts.append(self._materialize_pass_receipt(slot_root, slot["slot_id"]))
+                roots.append(slot_root)
+            optional_root = root / "OEM-stress"
+            optional = self._materialize_pass_receipt(optional_root, "OEM-stress")
+            failed = optional["tests"][0]
+            failed.update(
+                status="FAIL",
+                observed="Observed optional OEM stress failure.",
+                reason="Optional OEM stress scenario did not meet its observation.",
+                failure_class="oem",
+            )
+            proof_path = optional_root / failed["evidence"][0]["path"]
+            proof = proof_fixture(optional, failed)
+            proof["observed"] = failed["observed"]
+            proof_path.write_text(json.dumps(proof), encoding="utf-8")
+            failed["evidence"][0]["sha256"] = hashlib.sha256(proof_path.read_bytes()).hexdigest()
+            optional["aggregate_status"] = "FAIL"
+            self.assertEqual(matrix.validate_receipt(optional), [])
+            receipts.append(optional)
+            roots.append(optional_root)
+
+            result = matrix.evaluate_gate(receipts, matrix.load_matrix(matrix.DEFAULT_MATRIX_PATH), receipt_roots=roots)
+
+            self.assertEqual(result["status"], "PASS")
+            self.assertTrue(result["eligible"])
+            self.assertEqual(result["optional_failures"][0]["slot_id"], "OEM-stress")
+            self.assertEqual(result["optional_failures"][0]["status"], "FAIL")
+
     def test_record_test_scans_evidence_bytes_before_setting_redaction_checked(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -520,6 +555,37 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
                 self.assertTrue(matrix.validate_receipt(receipt), field)
                 receipt["device"].pop(field)
                 self.assertTrue(matrix.validate_receipt(receipt), field)
+
+    def test_receipt_metadata_rejects_serial_digest_matches_and_short_serial_suffix(self):
+        raw_serial = "raw-device-serial"
+        receipt = receipt_fixture()
+        receipt["device"]["serial_sha256"] = hashlib.sha256(raw_serial.encode("utf-8")).hexdigest()
+        receipt["device"]["device_id"] = raw_serial
+        errors = matrix.validate_receipt(receipt)
+        self.assertTrue(any("serial" in error.lower() for error in errors), errors)
+
+        short_serial = "ABCD1234"
+        receipt = receipt_fixture()
+        receipt["device"]["serial_sha256"] = hashlib.sha256(short_serial.encode("utf-8")).hexdigest()
+        receipt["device"]["serial_suffix"] = short_serial
+        errors = matrix.validate_receipt(receipt)
+        self.assertTrue(any("serial" in error.lower() for error in errors), errors)
+
+        output = Path(tempfile.mkdtemp()) / "short-serial.json"
+        with patch.object(matrix, "list_adb_devices", return_value=[{"serial": short_serial, "state": "device"}]), \
+             patch.object(matrix, "_run_adb", side_effect=AssertionError("short serial must be blocked before metadata capture")):
+            with self.assertRaises(matrix.BlockedError):
+                matrix.capture_receipt(
+                    artifact=artifact_fixture(),
+                    output=output,
+                    slot_id="A13-Google",
+                    serial=None,
+                    adb="adb",
+                    operator_id="operator",
+                    authorization_ref="auth-record",
+                    backend_id="controlled",
+                )
+        self.assertFalse(output.exists())
 
     def test_receipt_validator_enforces_required_fields_and_rejects_extra_fields(self):
         receipt = self._pass_receipt()
@@ -840,6 +906,128 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
                     backend_id="controlled",
                 )
         self.assertFalse(receipt.exists())
+
+    def test_battery_capture_uses_authoritative_exemption_query_and_blocks_unknown(self):
+        package = "io.github.hkhaobin.hermeswebui"
+        calls = []
+
+        def run_deviceidle(_adb, _serial, *args):
+            calls.append(args)
+            if args == ("shell", "dumpsys", "deviceidle"):
+                return "DeviceIdleController state: active\n"
+            if args == ("shell", "dumpsys", "deviceidle", "whitelist"):
+                return "Whitelist user apps:\n  com.example.other\n"
+            raise AssertionError(args)
+
+        with patch.object(matrix, "_run_adb", side_effect=run_deviceidle):
+            optimized, optimized_evidence = matrix._battery_optimization("adb", "serial", package)
+        self.assertEqual(optimized, "optimized")
+        self.assertIn("whitelist", optimized_evidence)
+        self.assertIn(("shell", "dumpsys", "deviceidle", "whitelist"), calls)
+
+        calls.clear()
+
+        def run_exempt(_adb, _serial, *args):
+            calls.append(args)
+            if args == ("shell", "dumpsys", "deviceidle"):
+                return f"Whitelist user apps:\n  {package}\n"
+            raise AssertionError(args)
+
+        with patch.object(matrix, "_run_adb", side_effect=run_exempt):
+            exempt, exempt_evidence = matrix._battery_optimization("adb", "serial", package)
+        self.assertEqual(exempt, "exempt")
+        self.assertIn("deviceidle", exempt_evidence)
+        self.assertEqual(calls, [("shell", "dumpsys", "deviceidle")])
+
+        def run_query_failure(_adb, _serial, *args):
+            if args == ("shell", "dumpsys", "deviceidle"):
+                return "DeviceIdleController state: active\n"
+            raise matrix.BlockedError("authoritative whitelist query failed")
+
+        with patch.object(matrix, "_run_adb", side_effect=run_query_failure):
+            unknown, unknown_evidence = matrix._battery_optimization("adb", "serial", package)
+        self.assertEqual(unknown, "unknown")
+        self.assertIn("unknown", unknown_evidence)
+
+        serial = "R58M1234567"
+        props = "\n".join(
+            [
+                "[ro.product.cpu.abilist]: [arm64-v8a,armeabi-v7a]",
+                "[ro.build.version.sdk]: [33]",
+                "[ro.product.manufacturer]: [Google]",
+                "[ro.product.model]: [Pixel 8]",
+                "[ro.build.version.release]: [13]",
+                "[ro.build.fingerprint]: [google/pixel/pixel8:13/2026/1234567:user/release-keys]",
+                "[ro.build.version.security_patch]: [2026-01-01]",
+                "[ro.build.display.id]: [AOSP-2026]",
+            ]
+        )
+
+        def run_capture(_adb, selected_serial, *args):
+            self.assertEqual(selected_serial, serial)
+            if args == ("shell", "getprop"):
+                return props
+            if args == ("shell", "wm", "size"):
+                return "Physical size: 1080x2400\n"
+            if args == ("shell", "wm", "density"):
+                return "Physical density: 420\n"
+            if args == ("shell", "cmd", "webviewupdate", "get-current-webview-package"):
+                return "com.test.webview 1.2.3\n"
+            if args == ("shell", "settings", "get", "secure", "enabled_accessibility_services"):
+                return "\n"
+            if args == ("shell", "settings", "get", "secure", "default_input_method"):
+                return "com.google.android.inputmethod.latin\n"
+            if args == ("shell", "settings", "get", "global", "airplane_mode_on"):
+                return "0\n"
+            raise AssertionError(args)
+
+        for battery_value in ("optimized", "exempt"):
+            with self.subTest(battery_value=battery_value), tempfile.TemporaryDirectory() as tmp:
+                output = Path(tmp) / "receipt.json"
+                with patch.object(matrix, "list_adb_devices", return_value=[{"serial": serial, "state": "device"}]), \
+                     patch.object(matrix, "_run_adb", side_effect=run_capture), \
+                     patch.object(matrix, "_parse_webview", return_value={"package": "com.test.webview", "version": "1.2.3", "provider": "com.test.webview"}), \
+                     patch.object(matrix, "_installed_apk_metadata", return_value=installed_apk_fixture()), \
+                     patch.object(matrix, "_notification_permission", return_value="default"), \
+                     patch.object(matrix, "_battery_optimization", return_value=(battery_value, f"reported-{battery_value}")), \
+                     patch.object(matrix, "_network_mode", return_value="connected"), \
+                     patch.object(matrix, "_screen_state", return_value=("interactive", "mWakefulness=Awake")):
+                    receipt = matrix.capture_receipt(
+                        artifact=artifact_fixture(),
+                        output=output,
+                        slot_id="A13-Google",
+                        serial=None,
+                        adb="adb",
+                        operator_id="operator",
+                        authorization_ref="auth-record",
+                        backend_id="controlled",
+                    )
+                self.assertEqual(receipt["device"]["battery"]["optimization"], battery_value)
+                self.assertEqual(receipt["preconditions"]["battery_optimization"]["value"], battery_value)
+                self.assertTrue(output.exists())
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "unknown-battery.json"
+            with patch.object(matrix, "list_adb_devices", return_value=[{"serial": serial, "state": "device"}]), \
+                 patch.object(matrix, "_run_adb", side_effect=run_capture), \
+                 patch.object(matrix, "_parse_webview", return_value={"package": "com.test.webview", "version": "1.2.3", "provider": "com.test.webview"}), \
+                 patch.object(matrix, "_installed_apk_metadata", return_value=installed_apk_fixture()), \
+                 patch.object(matrix, "_notification_permission", return_value="default"), \
+                 patch.object(matrix, "_battery_optimization", return_value=("unknown", "unknown")), \
+                 patch.object(matrix, "_network_mode", return_value="connected"), \
+                 patch.object(matrix, "_screen_state", return_value=("interactive", "mWakefulness=Awake")):
+                with self.assertRaises(matrix.BlockedError):
+                    matrix.capture_receipt(
+                        artifact=artifact_fixture(),
+                        output=output,
+                        slot_id="A13-Google",
+                        serial=None,
+                        adb="adb",
+                        operator_id="operator",
+                        authorization_ref="auth-record",
+                        backend_id="controlled",
+                    )
+            self.assertFalse(output.exists())
 
     def test_record_test_hashes_relative_evidence_and_updates_aggregate(self):
         with tempfile.TemporaryDirectory() as tmp:

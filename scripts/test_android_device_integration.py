@@ -205,7 +205,7 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
                 runtime_source_commit="e" * 40,
                 payload_id=payload_id,
                 webui_revision="f" * 40,
-                repository="ExampleOwner/example-repo",
+                repository=matrix.EXPECTED_REPOSITORY,
             )
             manifest = root / "artifact-manifest.json"
             manifest.write_text(json.dumps(artifact), encoding="utf-8")
@@ -226,7 +226,7 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
                     release_cert_path=cert,
                     aapt_path=root / "aapt",
                     signer_sha256="b" * 64,
-                    repository="ExampleOwner/example-repo",
+                    repository=matrix.EXPECTED_REPOSITORY,
                     workflow="Build APK",
                     artifact_name="apk",
                     run_id="12345",
@@ -248,17 +248,60 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
                         release_cert_path=cert,
                         aapt_path=root / "aapt",
                         signer_sha256="b" * 64,
-                        repository="ExampleOwner/example-repo",
+                        repository=matrix.EXPECTED_REPOSITORY,
                         workflow="Build APK",
                         artifact_name="apk",
                         run_id="12345",
                         head_sha="c" * 40,
                     )
 
+    def test_publish_verifier_rejects_noncanonical_apk_filename_before_rebinding(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            apk = root / "other.apk"
+            apk.write_bytes(b"synthetic APK bytes")
+            artifact = matrix.build_artifact_manifest(
+                apk,
+                application_id=matrix.EXPECTED_APPLICATION_ID,
+                version_name="0.1.2",
+                version_code=99,
+                signer_sha256="b" * 64,
+                build_run_id="12345",
+                head_sha="c" * 40,
+                runtime_version="runtime-test",
+                runtime_sha256="d" * 64,
+                runtime_source_commit="e" * 40,
+                payload_id="payload-test",
+                webui_revision="f" * 40,
+                repository=matrix.EXPECTED_REPOSITORY,
+            )
+            manifest = root / "artifact-manifest.json"
+            manifest.write_text(json.dumps(artifact), encoding="utf-8")
+            with self.assertRaisesRegex(matrix.HarnessError, "filename"):
+                artifact_verifier.verify_manifest(
+                    manifest_path=manifest,
+                    apk_path=apk,
+                    payload_manifest_path=root / "payload.json",
+                    payload_artifact_manifest_path=root / "payload-artifact.json",
+                    payload_zip_path=root / "payload.zip",
+                    runtime_meta_path=root / "runtime-meta.json",
+                    install_stamp_path=root / "install-stamp.json",
+                    webui_revision_path=root / "webui-revision.txt",
+                    release_cert_path=root / "release-cert.sha256",
+                    aapt_path=root / "aapt",
+                    signer_sha256="b" * 64,
+                    repository=matrix.EXPECTED_REPOSITORY,
+                    workflow=matrix.EXPECTED_WORKFLOW,
+                    artifact_name=matrix.EXPECTED_ARTIFACT_NAME,
+                    run_id="12345",
+                    head_sha="c" * 40,
+                )
+
     def test_publish_requires_the_same_actions_identity_and_releases_manifest(self):
         for required in (
             'run=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID")',
             'gh run download "$RUN_ID" --name apk --dir dist',
+            "apks=(hermes-android-*.apk)",
             "artifact-manifest.json",
             'build.get("repository") == repository',
             'build.get("artifact_name") == "apk"',
@@ -274,6 +317,7 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
     def test_publish_rebinds_every_manifest_component_to_downloaded_inputs(self):
         for required in (
             "scripts/verify_android_artifact_manifest.py",
+            "validate_release_artifact",
             'gh run download "$RUN_ID" --name payload --dir payload-artifact',
             "--payload-manifest payload.json",
             "--payload-artifact-manifest ../payload-artifact/payload.json",

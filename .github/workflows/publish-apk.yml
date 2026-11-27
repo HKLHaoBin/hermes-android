@@ -63,7 +63,7 @@ jobs:
               raise SystemExit("artifact-manifest identity mismatch: " + ", ".join(failed))
           PY
           shopt -s nullglob
-          apks=(hermes-*.apk)
+          apks=(hermes-android-*.apk)
           [[ ${#apks[@]} == 1 ]]
           apk=${apks[0]}
           manifest_apk=$(python3 -c 'import json; print(json.load(open("artifact-manifest.json", encoding="utf-8"))["apk"]["filename"])')
