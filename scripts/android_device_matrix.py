@@ -281,6 +281,7 @@ def artifact_identity(artifact: dict[str, Any]) -> tuple[Any, ...]:
         apk["version_code"],
         build["repository"],
         build["workflow"],
+        build["artifact_name"],
         build["run_id"],
         build["head_sha"],
         runtime["version"],
@@ -326,11 +327,11 @@ def validate_artifact(artifact: Any) -> list[str]:
     if _object_shape(
         build,
         "artifact.build",
-        required={"repository", "workflow", "run_id", "head_sha"},
-        allowed={"repository", "workflow", "run_id", "head_sha"},
+        required={"repository", "workflow", "artifact_name", "run_id", "head_sha"},
+        allowed={"repository", "workflow", "artifact_name", "run_id", "head_sha"},
         errors=errors,
     ):
-        for field in ("repository", "workflow"):
+        for field in ("repository", "workflow", "artifact_name"):
             _known_identity(build.get(field), f"artifact.build.{field}", errors)
         if isinstance(build.get("repository"), str) and not re.fullmatch(r"[^/\s]+/[^/\s]+", build["repository"]):
             errors.append("artifact.build.repository must be an owner/repository value")
@@ -732,6 +733,7 @@ def build_artifact_manifest(
     repository: str | None = None,
     owner: str | None = None,
     repo: str | None = None,
+    artifact_name: str = "apk",
     workflow: str = "Build APK",
 ) -> dict[str, Any]:
     if not apk_path.is_file():
@@ -757,6 +759,7 @@ def build_artifact_manifest(
         "build": {
             "repository": _resolve_repository(repository, owner, repo),
             "workflow": workflow,
+            "artifact_name": artifact_name,
             "run_id": build_run_id,
             "head_sha": head_sha.lower(),
         },
@@ -1216,10 +1219,20 @@ def _command_artifact(args: argparse.Namespace) -> int:
         repository=args.repository,
         owner=args.owner,
         repo=args.repo,
+        artifact_name=args.artifact_name,
+        workflow=args.workflow,
     )
     _write_json_atomic(Path(args.output), manifest)
     print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return EXIT_PASS
+
+
+def _command_validate_artifact(args: argparse.Namespace) -> int:
+    path = Path(args.artifact)
+    artifact = load_json(path)
+    errors = validate_artifact(artifact)
+    print(json.dumps({"valid": not errors, "errors": errors, "artifact": str(path)}, ensure_ascii=False, indent=2))
+    return EXIT_PASS if not errors else EXIT_FAIL
 
 
 def _command_validate_matrix(args: argparse.Namespace) -> int:
@@ -1323,11 +1336,17 @@ def _build_parser() -> argparse.ArgumentParser:
     artifact_parser.add_argument("--runtime-source-commit", required=True)
     artifact_parser.add_argument("--payload-id", required=True)
     artifact_parser.add_argument("--webui-revision", required=True)
+    artifact_parser.add_argument("--artifact-name", default="apk")
+    artifact_parser.add_argument("--workflow", default="Build APK")
     provenance = artifact_parser.add_mutually_exclusive_group()
     provenance.add_argument("--repository", help="explicit owner/repository provenance")
     provenance.add_argument("--owner", help="repository owner; pair with --repo")
     artifact_parser.add_argument("--repo", help="repository name; pair with --owner")
     artifact_parser.set_defaults(handler=_command_artifact)
+
+    validate_artifact_parser = sub.add_parser("validate-artifact")
+    validate_artifact_parser.add_argument("--artifact", required=True)
+    validate_artifact_parser.set_defaults(handler=_command_validate_artifact)
 
     capture_parser = sub.add_parser("capture", help="capture exact metadata from an authorized ADB device only")
     capture_parser.add_argument("--artifact-manifest", required=True)

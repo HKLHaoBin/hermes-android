@@ -182,10 +182,11 @@
         "build": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["repository", "workflow", "run_id", "head_sha"],
+          "required": ["repository", "workflow", "artifact_name", "run_id", "head_sha"],
           "properties": {
             "repository": { "type": "string", "minLength": 1 },
             "workflow": { "type": "string", "minLength": 1 },
+            "artifact_name": { "type": "string", "minLength": 1 },
             "run_id": { "type": "string", "pattern": "^[0-9]+$" },
             "head_sha": { "$ref": "#/$defs/sha1" }
           }

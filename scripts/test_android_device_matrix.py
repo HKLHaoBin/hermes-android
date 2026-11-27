@@ -38,6 +38,7 @@ def artifact_fixture() -> dict:
         "build": {
             "repository": "HKLHaoBin/hermes-android",
             "workflow": "Build APK",
+            "artifact_name": "apk",
             "run_id": "12345",
             "head_sha": "c" * 40,
         },
@@ -161,6 +162,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         self.assertNotIn("serial", schema["$defs"]["device"]["properties"])
         self.assertIn("is_emulator", schema["$defs"]["device"]["required"])
         self.assertIn("transport", schema["$defs"]["device"]["required"])
+        self.assertIn("artifact_name", schema["$defs"]["artifact"]["properties"]["build"]["required"])
         self.assertEqual(schema["$defs"]["test"]["properties"]["reason"]["minLength"], 1)
         self.assertEqual(schema["$defs"]["redaction"]["properties"]["raw_serial_stored"]["const"], False)
 
@@ -349,6 +351,34 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             ])
             self.assertEqual(result, matrix.EXIT_PASS)
             self.assertEqual(matrix.load_json(output)["build"]["repository"], "ExampleOwner/example-repo")
+            self.assertEqual(matrix.load_json(output)["build"]["artifact_name"], "apk")
+
+    def test_validate_artifact_cli_accepts_manifest_and_rejects_missing_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            apk = root / "candidate.apk"
+            output = root / "artifact.json"
+            apk.write_bytes(b"test-only APK bytes")
+            manifest = matrix.build_artifact_manifest(
+                apk,
+                application_id="io.github.hkhaobin.hermeswebui",
+                version_name="0.1.2",
+                version_code=99,
+                signer_sha256="b" * 64,
+                build_run_id="12345",
+                head_sha="c" * 40,
+                runtime_version="runtime-test",
+                runtime_sha256="d" * 64,
+                runtime_source_commit="e" * 40,
+                payload_id="payload-test",
+                webui_revision="f" * 40,
+                repository="ExampleOwner/example-repo",
+            )
+            output.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(matrix.main(["validate-artifact", "--artifact", str(output)]), matrix.EXIT_PASS)
+            manifest["build"].pop("artifact_name")
+            output.write_text(json.dumps(manifest), encoding="utf-8")
+            self.assertEqual(matrix.main(["validate-artifact", "--artifact", str(output)]), matrix.EXIT_FAIL)
 
     def test_validate_matrix_checks_each_required_slot_contract(self):
         matrix_data = matrix.load_matrix(matrix.DEFAULT_MATRIX_PATH)

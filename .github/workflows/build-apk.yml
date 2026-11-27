@@ -25,6 +25,8 @@ concurrency:
 env:
   CHANNEL_INPUT: ${{ inputs.channel || 'locked' }}
   VERSION_INPUT: ${{ inputs.version || '' }}
+  APP_VERSION_NAME: '0.1.2'
+  APP_VERSION_CODE: ${{ github.run_number }}
 
 jobs:
   apk:
@@ -40,6 +42,7 @@ jobs:
         run: |
           python3 scripts/android_device_matrix.py validate-matrix docs/android-device-matrix.json
           python3 scripts/test_android_device_matrix.py
+          python3 scripts/test_android_device_integration.py
 
       - name: Free disk space
         run: |
@@ -145,8 +148,8 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           HERMES_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          HERMES_ANDROID_VERSION_CODE: ${{ github.run_number }}
-          HERMES_ANDROID_VERSION_NAME: '0.1.2'
+          HERMES_ANDROID_VERSION_CODE: ${{ env.APP_VERSION_CODE }}
+          HERMES_ANDROID_VERSION_NAME: ${{ env.APP_VERSION_NAME }}
         run: |
           if [[ -z "$KEYSTORE_B64" || -z "$HERMES_ANDROID_KEYSTORE_PASSWORD" ]]; then
             echo '::error::Persistent release signing secrets are required. No debug fallback.'
@@ -187,6 +190,28 @@ jobs:
           (cd dist && sha256sum "$NAME" > "$NAME.sha256")
           ls -lh dist
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Create Actions artifact identity receipt
+        run: |
+          python3 scripts/create_android_artifact_manifest.py \
+            --apk "dist/${{ steps.apk.outputs.name }}" \
+            --output dist/artifact-manifest.json \
+            --runtime-meta build/deb/meta.json \
+            --install-stamp build/deb/root/data/data/com.termux/files/usr/lib/hermes-agent/app/install-stamp.json \
+            --payload-manifest build/payload/payload.json \
+            --webui-revision-file build/webui/ANDROID_WEBUI_REVISION \
+            --signer-file android/release-cert.sha256 \
+            --application-id io.github.hkhaobin.hermeswebui \
+            --version-name "$APP_VERSION_NAME" \
+            --version-code "$APP_VERSION_CODE" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "$GITHUB_WORKFLOW" \
+            --artifact-name apk \
+            --run-id "$GITHUB_RUN_ID" \
+            --head-sha "$GITHUB_SHA"
+          python3 scripts/android_device_matrix.py validate-artifact \
+            --artifact dist/artifact-manifest.json
+          test -s dist/artifact-manifest.json
 
       - uses: actions/upload-artifact@v5
         with:

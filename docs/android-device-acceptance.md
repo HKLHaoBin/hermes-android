@@ -89,6 +89,7 @@ Artifact identity includes:
 
 - APK filename, SHA-256, byte size, application ID, version name/code and signer certificate SHA-256;
 - build repository, workflow, numeric Actions run ID and 40-character head SHA;
+- Actions artifact name (`apk`) bound to that exact run;
 - runtime version, package SHA-256, source commit and payload ID;
 - 40-character WebUI revision.
 
@@ -113,6 +114,27 @@ python3 scripts/android_device_matrix.py artifact-manifest \
 ```
 
 `--repository` is required; alternatively use `--owner <owner> --repo <repository>`. The harness has no default repository provenance, so it cannot silently record the wrong owner/repository. Angle-bracket values above are required evidence inputs, not defaults. Do not replace them with guessed values.
+
+The CLI also accepts `--artifact-name` and `--workflow`; the Build APK workflow passes `apk` and the exact `GITHUB_WORKFLOW` value rather than relying on defaults. Validate a generated manifest before handing it to a hardware operator:
+
+```text
+python3 scripts/android_device_matrix.py validate-artifact \
+  --artifact dist/artifact-manifest.json
+```
+
+## Integration-prep seam for the staged Android work
+
+The staging branch `integration/issue-1-all-prs` contains the Android integration work from PR #2, PR #3 and PR #4. This Issue #14 branch does not turn those static or source-contract checks into hardware results; it defines the seam that the integrated APK must satisfy:
+
+| Staged work | Existing static contract | Future real-device receipt seam |
+|---|---|---|
+| PR #2 capability diagnostics | `scripts/test_capabilities.py` checks `/__android/status.json`, Android API and ABI declarations. | `RD-RUNTIME-*` evidence must show the integrated diagnostics response on the exact device; a capability panel or container result is not a hardware PASS. |
+| PR #3 job-ledger contract | `scripts/test_job_ledger_contract.py` checks documented fields, timestamps and transitions. | `RD-JOB-01` must run an actual integrated Agent job; `RD-JOB-02` must show recovery/retry/notification behavior after the integrated runtime wiring exists. |
+| PR #4 job-ledger storage | `scripts/test_job_ledger_source.py` checks SQLite schema, profile isolation and revision-guarded transitions. | `RD-BG-*` and `RD-JOB-*` evidence must read back durable state through the app/service path on a real device; source checks alone never create a receipt. |
+
+The Build APK workflow writes `dist/artifact-manifest.json` only after APK signature verification. It binds the exact APK filename/SHA-256/signing identity to the Actions repository, workflow, `apk` artifact name, run ID and head SHA, plus the runtime package metadata, install-stamp source commit, payload ID and pinned WebUI revision. The same `apk` Actions artifact contains the APK, its `.sha256` sidecar, release certificate and this manifest. Publish verified APK downloads that artifact by run ID, rechecks the identity and retains `artifact-manifest.json` as a release asset.
+
+The manifest is an Actions artifact identity receipt, not a device receipt. A future authorized hardware workflow may download the `apk` artifact, validate the manifest, install and exercise that exact APK outside this static workflow, then archive one receipt directory per capability slot and run `gate`. Build CI and publish CI do not call `capture`, `record` or `gate`, do not connect to ADB, and produce no real-device result. Without an authorized online device, capture must remain `BLOCKED` with exit code `2` and write no receipt; planned but unexecuted scenarios remain `NOT RUN`.
 
 ## Redaction policy
 

@@ -35,11 +35,35 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           gh run download "$RUN_ID" --name apk --dir dist
           cd dist
+          [[ -f artifact-manifest.json ]]
+          python3 - "$GH_REPO" "$RUN_ID" "$sha" <<'PY'
+          import json
+          import sys
+
+          repository, run_id, head_sha = sys.argv[1:]
+          with open("artifact-manifest.json", encoding="utf-8") as stream:
+              manifest = json.load(stream)
+          build = manifest.get("build", {})
+          checks = {
+              "artifact_kind": manifest.get("artifact_kind") == "android-build-artifact",
+              "repository": build.get("repository") == repository,
+              "workflow": build.get("workflow") == "Build APK",
+              "artifact_name": build.get("artifact_name") == "apk",
+              "run_id": build.get("run_id") == run_id,
+              "head_sha": build.get("head_sha") == head_sha,
+          }
+          failed = [name for name, passed in checks.items() if not passed]
+          if failed:
+              raise SystemExit("artifact-manifest identity mismatch: " + ", ".join(failed))
+          PY
           shopt -s nullglob
           apks=(hermes-*.apk)
           [[ ${#apks[@]} == 1 ]]
           apk=${apks[0]}
+          manifest_apk=$(python3 -c 'import json; print(json.load(open("artifact-manifest.json", encoding="utf-8"))["apk"]["filename"])')
+          [[ "$manifest_apk" == "$apk" ]]
           sha256sum --check --strict "$apk.sha256"
+          manifest_digest=$(sha256sum artifact-manifest.json | awk '{print $1}')
           expected=$(gh api "repos/$GH_REPO/contents/android/release-cert.sha256?ref=$sha" --jq .content | base64 -d | tr -d '\r\n')
           [[ "$expected" =~ ^[0-9a-f]{64}$ && $(tr -d '\r\n' < release-cert.sha256) == "$expected" ]]
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
@@ -55,10 +79,12 @@ jobs:
           fi
           digest=$(cut -d ' ' -f1 Hermes-Android.apk.sha256)
           existing=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name=="Hermes-Android.apk") | .digest')
-          if [[ "$existing" != "sha256:$digest" ]]; then
-            gh release upload "$TAG" Hermes-Android.apk Hermes-Android.apk.sha256 release-cert.sha256 --clobber
+          manifest_existing=$(gh release view "$TAG" --json assets --jq '.assets[] | select(.name=="artifact-manifest.json") | .digest')
+          if [[ "$existing" != "sha256:$digest" || "$manifest_existing" != "sha256:$manifest_digest" ]]; then
+            gh release upload "$TAG" Hermes-Android.apk Hermes-Android.apk.sha256 release-cert.sha256 artifact-manifest.json --clobber
           fi
           [[ $(gh release view "$TAG" --json assets --jq '.assets[] | select(.name=="Hermes-Android.apk" and .state=="uploaded") | .digest') == "sha256:$digest" ]]
+          [[ $(gh release view "$TAG" --json assets --jq '.assets[] | select(.name=="artifact-manifest.json" and .state=="uploaded") | .digest') == "sha256:$manifest_digest" ]]
           gh api "repos/$GH_REPO/contents/RELEASE_NOTES.md?ref=$sha" --jq .content | base64 -d > release-notes.md
           test -s release-notes.md
           gh release edit "$TAG" --draft=false --latest --notes-file release-notes.md
