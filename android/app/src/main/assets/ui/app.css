@@ -273,6 +273,15 @@ body.typing #tabs { display: none; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 14px 0; font-size: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: 14px; border: 1px solid var(--line); }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; word-break: break-all; color: var(--text-2); }
+.capabilities { display: grid; gap: 8px; margin-top: 12px; }
+.cap-row { display: flex; gap: 10px; align-items: flex-start; padding: 9px 10px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); }
+.cap-dot { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: var(--muted); flex: none; }
+.cap-row.supported .cap-dot { background: var(--ok); }
+.cap-row.partial .cap-dot, .cap-row.experimental .cap-dot { background: var(--accent); }
+.cap-row.unavailable .cap-dot { background: var(--err); }
+.cap-name { color: var(--text); font-size: 14px; font-weight: 650; }
+.cap-state { margin-left: 7px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.cap-reason { margin-top: 2px; color: var(--muted); font-size: 12px; line-height: 1.35; }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .buttons.small button { padding: 5px 12px; font-size: 13px; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 15px; }

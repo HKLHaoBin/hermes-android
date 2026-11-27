@@ -52,8 +52,8 @@ class ReviewedSourceTests(unittest.TestCase):
         failure = service[service.index("} catch (t: Throwable)"):]
         self.assertLess(failure.index("stopOwnedProcess(attemptedRoot)"), failure.index("installer.rollback("))
         self.assertIn("installer.rollback(::quiescePayload)", failure)
-        self.assertIn("return runRuntime()", failure)
-        self.assertIn("if (!stopping && restored != null && restoredManifest != null)", failure)
+        self.assertIn("return runRuntime(generation)", failure)
+        self.assertIn("if (isGenerationCurrent(generation) && restored != null && restoredManifest != null)", failure)
         cleanup = method(self.service, "stopOwnedProcess")
         self.assertLess(cleanup.index("quiescePayload("), cleanup.index("proc?.waitFor()"))
         self.assertLess(cleanup.index("proc?.waitFor()"), cleanup.index("process = null"))
@@ -72,7 +72,7 @@ class ReviewedSourceTests(unittest.TestCase):
         self.assertIn("legacyRoot.renameTo(destination)", finish)
         self.assertIn('MANIFEST_FILE', finish)
         self.assertIn('writeState(id, null, pending = false', finish)
-        self.assertIn("if (!destination.isDirectory && !legacyRoot.renameTo(destination))", finish)
+        self.assertIn("if (!FileTools.exists(destination) && !legacyRoot.renameTo(destination))", finish)
         self.assertLess(finish.index("writeState(id, null, pending = false"), finish.rindex("legacyMarker.delete()"))
         rewrite = method(self.installer, "rewriteLegacyPaths")
         self.assertIn("legacyPath", rewrite)
@@ -83,8 +83,8 @@ class ReviewedSourceTests(unittest.TestCase):
         self.assertIn("Os.symlink(expected, link.absolutePath)", rewrite)
         service = method(self.service, "runRuntime")
         self.assertLess(service.index("quiescePayload(installer.root.absolutePath)"),
-                        service.index("installer.migrateLegacy(includedManifest)"))
-        self.assertLess(service.index("installer.migrateLegacy(includedManifest)"),
+                        service.index("installer.migrateLegacy {"))
+        self.assertLess(service.index("installer.migrateLegacy {"),
                         service.index("installer.selectedManifest(includedManifest)"))
 
     def test_install_cancellation_cannot_commit_a_candidate_after_stop(self):
@@ -98,8 +98,8 @@ class ReviewedSourceTests(unittest.TestCase):
         self.assertIn("t is PayloadInstaller.InstallCancelledException", service)
         self.assertIn("installer.rollback(::quiescePayload)", service)
         self.assertIn("rejectFailed = false", service)
-        install_end = service.index("installer.install(manifest")
-        cancel_guard = service.index("if (stopping)", install_end)
+        install_end = service.index("installer.install(")
+        cancel_guard = service.index("if (!isGenerationCurrent(generation))", install_end)
         self.assertLess(install_end, cancel_guard)
         self.assertLess(service.index("installer.activationPending()", cancel_guard),
                         service.index("installer.rollback(::quiescePayload)", cancel_guard))

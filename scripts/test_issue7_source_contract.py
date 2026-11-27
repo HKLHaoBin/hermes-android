@@ -56,7 +56,7 @@ class Issue7SourceContractTests(unittest.TestCase):
 
     def test_service_restarts_restored_slot_and_stops_before_rollback(self):
         service = (ROOT / "android/app/src/main/java/io/github/hermesandroid/HermesService.kt").read_text(encoding="utf-8")
-        for needle in ("installer.recoverPending(::quiescePayload)", "return runRuntime()", "stopOwnedProcess(attemptedRoot)", "proc?.waitFor()", "installer.pruneStaleSlots()"):
+        for needle in ("installer.recoverPending(::quiescePayload)", "return runRuntime(generation)", "stopOwnedProcess(attemptedRoot)", "proc?.waitFor()", "installer.pruneStaleSlots()"):
             self.assertIn(needle, service)
 
     def test_compatibility_file_is_non_secret(self):

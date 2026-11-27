@@ -29,16 +29,16 @@ Activation sequence:
 2. Check available storage for the candidate plus a retained previous slot.
 3. Extract to a unique staging directory under `hermes-agent-slots`.
 4. Apply path rewrites, symlinks and executable bits without touching the active slot.
-5. Verify the launcher and write the candidate manifest.
+5. Verify the launcher and write the candidate manifest plus a complete no-follow content/manifest integrity record.
 6. Rename the complete candidate into its slot and atomically replace the active-state file.
 7. Start Hermes and wait for the authenticated WebUI health probe.
 8. Mark the candidate healthy only after the probe succeeds.
 
 Verification/extraction failures before activation leave the existing active/fallback pointers intact. Service stop/destruction cancels extraction, waits for the installer worker to exit, and rolls back any pending activation instead of classifying cancellation as a payload failure. Cancelling a retained-slot reuse preserves that known-good slot for a later retry. After activation, a startup or health-state-commit failure first stops, waits for, and sweeps the candidate's process tree; only then may rollback change state and delete its directory. The failed payload identity is stored as `rejected`, never as `previous_good`. A failed cleanup or rollback-state write stops recovery without launching another runtime.
 
-If a complete previous-good manifest/launcher exists, the same service worker starts that restored payload using its installed manifest. Subsequent starts of the same APK continue to select the restored slot; health checks of that slot do not clear the rejected APK identity. A different payload identity may be installed by a later APK. The app never repairs an old manifest with the new APK's ZIP. First-install failure, missing fallback metadata, or incomplete fallback files remain explicit errors.
+If a complete previous-good manifest, launcher and integrity record validate, the same service worker starts that restored payload using its installed manifest. Subsequent starts of the same APK continue to select the restored slot; health checks of that slot do not clear the rejected APK identity. A different payload identity may be installed by a later APK. The app never repairs an old manifest with the new APK's ZIP. First-install failure, missing fallback metadata, or incomplete fallback files remain explicit errors.
 
-On upgrade from the pre-slot layout, the legacy `files/hermes-agent` directory is first moved into a versioned slot, receives an installed manifest, and has its known absolute paths and symlink targets rewritten to the new slot path. That migrated slot can therefore serve as previous-good during the first slot-based update.
+On upgrade from the pre-slot layout, the legacy `files/hermes-agent` directory is migrated only when it carries and validates its own complete legacy manifest. Migration uses no-follow reads, canonical-path containment and atomic metadata writes, then records a new integrity digest after path/symlink rewriting. A legacy tree without provable old metadata is not treated as previous-good and is left out of the fallback chain while the current APK payload is installed safely; the current APK manifest is never used to describe that old tree.
 
 A process death before the health mark is recovered on the next service start. Recovery quiesces the failed slot's root before changing active state or deleting that slot, rather than sweeping only the restored root afterward. No user-data/database rollback is attempted.
 

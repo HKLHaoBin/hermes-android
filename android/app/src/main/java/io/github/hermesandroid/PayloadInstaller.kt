@@ -44,10 +44,10 @@ class PayloadInstaller(private val context: Context) {
         context.assets.open(MANIFEST_ASSET).use { JSONObject(String(it.readBytes(), Charsets.UTF_8)) }
 
     fun installedId(): String? =
-        File(root, ID_FILE).takeIf { it.isFile }?.readText()?.trim()
+        readNoFollowText(root, ID_FILE)?.trim()
 
     fun installedManifest(): JSONObject? = try {
-        File(root, MANIFEST_FILE).takeIf { it.isFile }?.let { JSONObject(it.readText()) }
+        readNoFollowText(root, MANIFEST_FILE)?.let { JSONObject(it) }
     } catch (_: Throwable) {
         null
     }
@@ -66,16 +66,14 @@ class PayloadInstaller(private val context: Context) {
 
     fun needsInstall(manifest: JSONObject): Boolean {
         val id = manifest.getString("payload_id")
-        return installedId() != id || !File(root, manifest.getJSONObject("launcher").getString("python")).exists()
+        return installedId() != id || !validateSlot(root, manifest)
     }
 
     fun canReuseSlot(manifest: JSONObject): Boolean {
         val id = manifest.getString("payload_id")
         val current = activeSlotId()
         val candidate = slotDir(id)
-        return current != id && previousGoodSlotId() == id && candidate.isDirectory &&
-            File(candidate, ID_FILE).takeIf { it.isFile }?.readText()?.trim() == id &&
-            File(candidate, manifest.getJSONObject("launcher").getString("python")).isFile
+        return current != id && previousGoodSlotId() == id && validateSlot(candidate, manifest)
     }
 
     /** A rejected APK keeps using its installed fallback, never its bundled ZIP. */
@@ -88,70 +86,302 @@ class PayloadInstaller(private val context: Context) {
         return restored
     }
 
-    /** Convert the pre-slot install into a usable fallback slot before any new APK update. */
-    fun migrateLegacy(manifest: JSONObject) {
-        if (legacyMarker.isFile) finishLegacyMigration(manifest)
-        if (activeSlotId() != null || !legacyRoot.isDirectory) return
-        val id = File(legacyRoot, ID_FILE).takeIf { it.isFile }?.readText()?.trim()
-            ?.takeIf { isSafeSlotId(it) } ?: "legacy-${UUID.randomUUID()}"
-        validateSlotId(id)
-        slotsDir.mkdirs()
-        val destination = slotDir(id)
-        if (destination.exists()) throw IOException("旧运行环境 slot 已存在，拒绝覆盖")
-        writeLegacyMarker(id)
-        finishLegacyMigration(manifest)
+    private data class ContentEntry(val relative: String, val kind: Char, val file: File, val target: String? = null)
+
+    private fun validateSlot(slot: File, expectedManifest: JSONObject?): Boolean {
+        return try {
+            if (!slot.isDirectory || FileTools.isSymlink(slot)) false
+            else {
+                val id = readNoFollowText(slot, ID_FILE)?.trim() ?: return false
+                val installed = readNoFollowText(slot, MANIFEST_FILE)?.let(::JSONObject) ?: return false
+                if (installed.optString("payload_id") != id) return false
+                if (expectedManifest != null && manifestDigest(installed) != manifestDigest(expectedManifest)) return false
+                val integrity = readNoFollowText(slot, INTEGRITY_FILE)?.let(::JSONObject) ?: return false
+                if (integrity.optInt("format", -1) != 1 || integrity.optString("payload_id") != id) return false
+                if (integrity.optString("manifest_sha256") != manifestDigest(installed)) return false
+                if (integrity.optString("content_sha256") != slotContentDigest(slot)) return false
+                validateManifestEntries(slot, installed)
+            }
+        } catch (_: Throwable) {
+            false
+        }
     }
 
-    private fun writeLegacyMarker(id: String) {
-        val temp = File(filesDir, "hermes-agent.legacy-migration.json.tmp")
+    private fun validateManifestEntries(slot: File, manifest: JSONObject): Boolean {
+        val symlinkPaths = mutableSetOf<String>()
+        manifest.optJSONArray("symlinks")?.let { links ->
+            for (i in 0 until links.length()) symlinkPaths += links.getJSONArray(i).getString(0)
+        }
+        val launcher = manifest.getJSONObject("launcher").getString("python")
+        val launcherFile = if (launcher in symlinkPaths) safeLink(slot, launcher) else safeChild(slot, launcher)
+        if (!FileTools.exists(launcherFile)) return false
+        if (FileTools.isSymlink(launcherFile) && launcher !in symlinkPaths) return false
+        for (key in arrayOf("rewrite", "executables")) {
+            val paths = manifest.optJSONArray(key) ?: continue
+            for (i in 0 until paths.length()) {
+                val file = safeChild(slot, paths.getString(i))
+                if (!FileTools.exists(file) || FileTools.isSymlink(file)) return false
+            }
+        }
+        val links = manifest.optJSONArray("symlinks") ?: return true
+        for (i in 0 until links.length()) {
+            val pair = links.getJSONArray(i)
+            val link = safeLink(slot, pair.getString(0))
+            if (!FileTools.isSymlink(link)) return false
+            val expected = resolveInstalled(pair.getString(1), slot, manifest)
+            if (Os.readlink(link.absolutePath) != expected) return false
+        }
+        return true
+    }
+
+    private fun slotContentDigest(root: File): String {
+        val entries = ArrayList<ContentEntry>()
+        collectContentEntries(root, root, "", entries)
+        val digest = MessageDigest.getInstance("SHA-256")
+        for (entry in entries.sortedBy { it.relative }) {
+            when (entry.kind) {
+                'D' -> digest.update("D\u0000${entry.relative}\n".toByteArray(Charsets.UTF_8))
+                'L' -> digest.update("L\u0000${entry.relative}\u0000${entry.target}\n".toByteArray(Charsets.UTF_8))
+                'F' -> {
+                    digest.update("F\u0000${entry.relative}\u0000${entry.file.length()}\u0000".toByteArray(Charsets.UTF_8))
+                    entry.file.inputStream().use { input ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            digest.update(buffer, 0, n)
+                        }
+                    }
+                    digest.update('\n'.code.toByte())
+                }
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    private fun collectContentEntries(root: File, current: File, relative: String, out: MutableList<ContentEntry>) {
+        if (FileTools.isSymlink(current)) {
+            out += ContentEntry(relative, 'L', current, Os.readlink(current.absolutePath))
+            return
+        }
+        if (current.isDirectory) {
+            if (relative.isNotEmpty()) out += ContentEntry(relative, 'D', current)
+            val children = current.listFiles() ?: throw IOException("无法读取 payload slot")
+            for (child in children.sortedBy { it.name }) {
+                if (relative.isEmpty() && child.name in METADATA_FILES) continue
+                val childRelative = if (relative.isEmpty()) child.name else "$relative/${child.name}"
+                collectContentEntries(root, child, childRelative, out)
+            }
+            return
+        }
+        if (!current.isFile) throw IOException("payload slot 包含不支持的文件类型")
+        out += ContentEntry(relative, 'F', current)
+    }
+
+    private fun manifestDigest(manifest: JSONObject): String =
+        sha256(canonicalJson(manifest).toByteArray(Charsets.UTF_8))
+
+    private fun canonicalJson(value: Any?): String = when (value) {
+        JSONObject.NULL, null -> "null"
+        is JSONObject -> value.keys().asSequence().toList().sorted().joinToString("{", "}") { key ->
+            JSONObject.quote(key) + ":" + canonicalJson(value.get(key))
+        }
+        is org.json.JSONArray -> (0 until value.length()).joinToString("[", "]") { canonicalJson(value.get(it)) }
+        is String -> JSONObject.quote(value)
+        is Number, is Boolean -> value.toString()
+        else -> JSONObject.quote(value.toString())
+    }
+
+    private fun sha256(bytes: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun resolveInstalled(value: String, root: File, manifest: JSONObject): String {
+        val placeholders = manifest.getJSONObject("placeholders")
+        val prefix = "${root.absolutePath}/" + placeholders.optString("prefix_dir", "prefix")
+        return value.replace(placeholders.getString("root"), root.absolutePath)
+            .replace(placeholders.getString("prefix"), prefix)
+    }
+
+    private fun safeChild(root: File, relative: String): File {
+        if (relative.isBlank() || relative.startsWith('/') || relative.contains('\\') ||
+            relative.split('/').any { it == ".." }) throw IOException("unsafe payload path")
+        val child = File(root, relative)
+        ensureNoSymlinkAncestors(root, child.parentFile ?: root)
+        val rootCanonical = root.canonicalFile
+        val childCanonical = child.canonicalFile
+        val rootPath = rootCanonical.path.trimEnd(File.separatorChar) + File.separator
+        if (childCanonical.path != rootCanonical.path && !childCanonical.path.startsWith(rootPath)) {
+            throw IOException("payload path escapes slot")
+        }
+        if (FileTools.isSymlink(child)) throw IOException("payload metadata path is symlink")
+        return child
+    }
+
+    private fun safeLink(root: File, relative: String): File {
+        if (relative.isBlank() || relative.startsWith('/') || relative.contains('\\') ||
+            relative.split('/').any { it == ".." }) throw IOException("unsafe payload symlink")
+        val link = File(root, relative)
+        val parent = link.parentFile ?: throw IOException("payload symlink has no parent")
+        ensureNoSymlinkAncestors(root, parent)
+        ensureCanonicalInside(root, parent)
+        return link
+    }
+
+    private fun ensureNoSymlinkAncestors(root: File, start: File) {
+        val rootAbsolute = root.absoluteFile
+        var cursor: File? = start.absoluteFile
+        while (cursor != null) {
+            if (FileTools.isSymlink(cursor!!)) throw IOException("payload path traverses symlink")
+            if (cursor == rootAbsolute) return
+            cursor = cursor.parentFile
+        }
+        throw IOException("payload path is outside root")
+    }
+
+    private fun ensureCanonicalInside(root: File, child: File) {
+        if (FileTools.isSymlink(root)) throw IOException("payload root is symlink")
+        val rootPath = root.canonicalFile.path.trimEnd(File.separatorChar) + File.separator
+        val childPath = child.canonicalFile.path
+        if (childPath != root.canonicalFile.path && !childPath.startsWith(rootPath)) {
+            throw IOException("path escapes application data root")
+        }
+    }
+
+    private fun readNoFollowText(root: File, relative: String): String? {
+        val file = safeChild(root, relative)
+        if (!FileTools.exists(file)) return null
+        return file.readText(Charsets.UTF_8)
+    }
+
+    private fun readNoFollowBytes(root: File, relative: String): ByteArray? {
+        val file = safeChild(root, relative)
+        if (!FileTools.exists(file)) return null
+        return file.readBytes()
+    }
+
+    private fun writeAtomicNoFollow(root: File, relative: String, content: String) {
+        val file = safeChild(root, relative)
+        if (FileTools.isSymlink(file)) throw IOException("refusing to replace symlink metadata")
+        val parent = file.parentFile ?: throw IOException("metadata path has no parent")
+        parent.mkdirs()
+        val temp = File(parent, ".${file.name}.tmp-${UUID.randomUUID()}")
         FileOutputStream(temp).use { output ->
-            output.write(JSONObject().put("format", 1).put("slot", id).toString().toByteArray(Charsets.UTF_8))
+            output.write(content.toByteArray(Charsets.UTF_8))
             output.fd.sync()
         }
-        if (!temp.renameTo(legacyMarker)) throw IOException("无法记录旧运行环境迁移状态")
+        if (FileTools.isSymlink(file)) throw IOException("metadata path became symlink")
+        if (!temp.renameTo(file)) throw IOException("无法原子写入 payload metadata")
     }
 
-    private fun finishLegacyMigration(manifest: JSONObject) {
-        val marker = try { JSONObject(legacyMarker.readText()) } catch (t: Throwable) {
+    /** Convert only a legacy install carrying its own real manifest. */
+    fun migrateLegacy(cancelled: () -> Boolean = { false }) {
+        checkCancelled(cancelled)
+        if (FileTools.exists(legacyMarker)) {
+            finishLegacyMigration(cancelled)
+            return
+        }
+        if (activeSlotId() != null || !legacyRoot.isDirectory || FileTools.isSymlink(legacyRoot)) return
+        val legacyManifest = legacyManifestOrNull()
+        if (legacyManifest == null) return
+        val id = legacyManifest.optString("payload_id").takeIf { isSafeSlotId(it) } ?: return
+        validateSlotId(id)
+        if (FileTools.isSymlink(slotsDir)) throw IOException("payload slots root is symlink")
+        slotsDir.mkdirs()
+        if (!slotsDir.isDirectory) throw IOException("无法创建 payload slots root")
+        val destination = slotDir(id)
+        if (FileTools.exists(destination)) throw IOException("旧运行环境 slot 已存在，拒绝覆盖")
+        writeLegacyMarker(id, legacyManifest)
+        checkCancelled(cancelled)
+        finishLegacyMigration(cancelled)
+    }
+
+    private fun legacyManifestOrNull(): JSONObject? = try {
+        val text = readNoFollowText(legacyRoot, MANIFEST_FILE) ?: return null
+        val manifest = JSONObject(text)
+        if (!isSafeSlotId(manifest.optString("payload_id"))) return null
+        if (!manifest.has("placeholders") || !manifest.has("launcher") || !manifest.has("rewrite") ||
+            !manifest.has("symlinks") || !manifest.has("executables")) return null
+        if (!validateManifestEntries(legacyRoot, manifest)) return null
+        manifest
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun writeLegacyMarker(id: String, legacyManifest: JSONObject) {
+        writeAtomicNoFollow(
+            filesDir,
+            legacyMarker.name,
+            JSONObject().put("format", 2).put("slot", id).put("manifest", legacyManifest).toString(),
+        )
+    }
+
+    private fun finishLegacyMigration(cancelled: () -> Boolean) {
+        checkCancelled(cancelled)
+        val marker = try {
+            JSONObject(readNoFollowText(filesDir, legacyMarker.name) ?: throw IOException("迁移标记不存在"))
+        } catch (t: Throwable) {
             throw IOException("旧运行环境迁移标记损坏", t)
         }
-        if (marker.optInt("format", -1) != 1) throw IOException("旧运行环境迁移标记版本无效")
+        if (marker.optInt("format", -1) != 2) throw IOException("旧运行环境迁移标记版本无效")
         val id = marker.optString("slot")
         validateSlotId(id)
+        val legacyManifest = marker.optJSONObject("manifest") ?: return
         val stateActive = activeSlotId()
         val destination = slotDir(id)
         if (stateActive != null) {
-            if (stateActive == id && destination.isDirectory && File(destination, MANIFEST_FILE).isFile) {
+            if (stateActive == id && validateSlot(destination, legacyManifest)) {
+                if (FileTools.isSymlink(legacyMarker)) throw IOException("迁移标记是 symlink")
                 legacyMarker.delete()
                 return
             }
             throw IOException("旧运行环境迁移与现有 active slot 冲突")
         }
+        ensureCanonicalInside(filesDir, legacyRoot)
+        ensureCanonicalInside(filesDir, destination)
         val legacyPath = legacyRoot.absolutePath
-        if (legacyRoot.isDirectory && destination.exists()) throw IOException("旧运行环境迁移同时存在两个源目录")
-        if (!destination.isDirectory && !legacyRoot.renameTo(destination)) {
+        if (FileTools.exists(legacyRoot) && FileTools.exists(destination)) {
+            throw IOException("旧运行环境迁移同时存在两个源目录")
+        }
+        checkCancelled(cancelled)
+        if (!FileTools.exists(destination) && !legacyRoot.renameTo(destination)) {
             throw IOException("无法迁移旧运行环境到 slot")
         }
         val priorState = readState()
-        rewriteLegacyPaths(destination, legacyPath, manifest)
-        File(destination, ID_FILE).writeText(id)
-        val legacyManifest = JSONObject(manifest.toString()).apply {
-            put("payload_id", id)
-            put("legacy_migrated", true)
-            put("runtime", JSONObject().put("channel", "legacy").put("version", "unknown").put("source_commit", "unknown"))
-            put("webui", JSONObject().put("channel", "legacy").put("tag", "unknown").put("commit", "unknown"))
-            put("compatibility", JSONObject().put("status", "unknown"))
+        val migratedManifest: JSONObject
+        try {
+            rewriteLegacyPaths(destination, legacyPath, legacyManifest)
+            migratedManifest = JSONObject(legacyManifest.toString()).put("legacy_migrated", true)
+            writeAtomicNoFollow(destination, ID_FILE, id)
+            writeAtomicNoFollow(destination, MANIFEST_FILE, migratedManifest.toString())
+            writeAtomicNoFollow(
+                destination,
+                INTEGRITY_FILE,
+                JSONObject().put("format", 1)
+                    .put("payload_id", id)
+                    .put("manifest_sha256", manifestDigest(migratedManifest))
+                    .put("content_sha256", slotContentDigest(destination))
+                    .toString(),
+            )
+            if (!validateSlot(destination, migratedManifest)) throw IOException("legacy slot integrity validation failed")
+        } catch (_: Throwable) {
+            val quarantine = File(filesDir, "hermes-agent-legacy-unusable-${UUID.randomUUID()}")
+            if (FileTools.exists(destination)) destination.renameTo(quarantine)
+            if (FileTools.isSymlink(legacyMarker)) throw IOException("迁移标记是 symlink")
+            legacyMarker.delete()
+            return
         }
-        File(destination, MANIFEST_FILE).writeText(legacyManifest.toString())
+        checkCancelled(cancelled)
         writeState(id, null, pending = false, generation = priorState.optLong("generation", 0L) + 1L)
+        if (FileTools.isSymlink(legacyMarker)) throw IOException("迁移标记是 symlink")
         legacyMarker.delete()
     }
 
     private fun rewriteLegacyPaths(destination: File, legacyPath: String, manifest: JSONObject) {
-        val placeholders = manifest.optJSONObject("placeholders")
-        val rootPh = placeholders?.optString("root").orEmpty()
-        val prefixPh = placeholders?.optString("prefix").orEmpty()
-        val prefixDir = "$destination/" + placeholders?.optString("prefix_dir", "prefix")
+        ensureCanonicalInside(filesDir, destination)
+        val placeholders = manifest.getJSONObject("placeholders")
+        val rootPh = placeholders.optString("root")
+        val prefixPh = placeholders.optString("prefix")
+        val prefixDir = "$destination/" + placeholders.optString("prefix_dir", "prefix")
         fun resolve(value: String): String {
             var result = value.replace(legacyPath, destination.absolutePath)
             if (rootPh.isNotEmpty()) result = result.replace(rootPh, destination.absolutePath)
@@ -161,23 +391,24 @@ class PayloadInstaller(private val context: Context) {
         val rewrite = manifest.optJSONArray("rewrite")
         if (rewrite != null) {
             for (i in 0 until rewrite.length()) {
-                val file = File(destination, rewrite.getString(i))
-                if (!file.isFile) continue
-                val oldText = String(file.readBytes(), Charsets.ISO_8859_1)
+                val relative = rewrite.getString(i)
+                val oldBytes = readNoFollowBytes(destination, relative) ?: continue
+                val oldText = String(oldBytes, Charsets.ISO_8859_1)
                 val newText = oldText.replace(legacyPath, destination.absolutePath)
-                if (newText != oldText) file.writeBytes(newText.toByteArray(Charsets.ISO_8859_1))
+                if (newText != oldText) writeAtomicNoFollow(destination, relative, newText)
             }
         }
         val links = manifest.optJSONArray("symlinks")
         if (links != null) {
             for (i in 0 until links.length()) {
                 val pair = links.getJSONArray(i)
-                val link = File(destination, pair.getString(0))
+                val link = safeLink(destination, pair.getString(0))
                 val expected = resolve(pair.getString(1))
                 val current = try { Os.readlink(link.absolutePath) } catch (_: Throwable) { null }
                 if (current != expected) {
                     if (FileTools.exists(link)) FileTools.deleteTree(link)
                     link.parentFile?.mkdirs()
+                    ensureCanonicalInside(filesDir, link.parentFile ?: destination)
                     Os.symlink(expected, link.absolutePath)
                 }
             }
@@ -196,9 +427,9 @@ class PayloadInstaller(private val context: Context) {
         if (!state.optBoolean("pending", false)) return activeSlotId()
         val previous = state.optStringOrNull("previous_good")
         val failed = state.optStringOrNull("active")
-        val restored = previous?.takeIf { it != failed && slotDir(it).isDirectory }
+        val restored = previous?.takeIf { it != failed && validateSlot(slotDir(it), null) }
         val retained = failed?.takeIf {
-            state.optBoolean("reused_previous_good", false) && it != restored && slotDir(it).isDirectory
+            state.optBoolean("reused_previous_good", false) && it != restored && validateSlot(slotDir(it), null)
         }
         failed?.let { beforeDiscard(slotDir(it).absolutePath) }
         writeState(
@@ -237,28 +468,42 @@ class PayloadInstaller(private val context: Context) {
         manifest: JSONObject,
         progress: (Float, String) -> Unit,
         cancelled: () -> Boolean = { false },
+        beforeDiscard: (String) -> Unit = {},
     ) {
         val payloadId = manifest.getString("payload_id")
         validateSlotId(payloadId)
         if (payloadId == rejectedPayloadId()) throw IOException("refusing rejected payload: $payloadId")
         checkCancelled(cancelled)
-        migrateLegacy(manifest)
+        migrateLegacy(cancelled)
         verifyAssetDigest(manifest, cancelled)
+        if (FileTools.isSymlink(slotsDir)) throw IOException("payload slots root is symlink")
         slotsDir.mkdirs()
+        if (!slotsDir.isDirectory) throw IOException("无法创建 payload slots root")
         pruneSlots()
         val candidate = slotDir(payloadId)
-        val current = activeSlotId()
-        val previous = previousGoodSlotId()
-        if (candidate.isDirectory && previous == payloadId && current != payloadId) {
+        var current = activeSlotId()
+        var previous = previousGoodSlotId()
+        if (current == payloadId && FileTools.exists(candidate) && !validateSlot(candidate, manifest)) {
+            quarantineInvalidActive(payloadId, beforeDiscard)
+            current = activeSlotId()
+            previous = previousGoodSlotId()
+        }
+        if (previous == payloadId && candidate.exists() && !validateSlot(candidate, manifest)) {
+            quarantineInvalidPreviousGood(payloadId, beforeDiscard)
+            current = activeSlotId()
+            previous = previousGoodSlotId()
+        }
+        if (FileTools.exists(candidate) && previous == payloadId && current != payloadId) {
             checkCancelled(cancelled)
             activateExisting(payloadId, current, cancelled, reusedPreviousGood = true)
             progress(1f, "运行环境已就绪")
             return
         }
-        if (candidate.exists() && current != payloadId) FileTools.deleteTree(candidate)
+        if (FileTools.exists(candidate) && current != payloadId) FileTools.deleteTree(candidate)
         val staging = File(slotsDir, ".staging-$payloadId-${UUID.randomUUID()}")
         FileTools.deleteTree(staging)
         staging.mkdirs()
+        if (!staging.isDirectory || FileTools.isSymlink(staging)) throw IOException("无法创建 payload staging")
 
         val total = manifest.optLong("total_bytes", 1L).coerceAtLeast(1L)
         var written = 0L
@@ -273,7 +518,7 @@ class PayloadInstaller(private val context: Context) {
                     val entry = zip.nextEntry ?: break
                     val name = entry.name
                     checkEntryName(name)
-                    val out = File(staging, name)
+                    val out = safeChild(staging, name)
                     if (entry.isDirectory) {
                         out.mkdirs()
                         continue
@@ -307,18 +552,18 @@ class PayloadInstaller(private val context: Context) {
             val rewrite = manifest.getJSONArray("rewrite")
             for (i in 0 until rewrite.length()) {
                 checkCancelled(cancelled)
-                val file = File(staging, rewrite.getString(i))
-                if (!file.isFile) continue
-                val text = String(file.readBytes(), Charsets.ISO_8859_1)
+                val relative = rewrite.getString(i)
+                val bytes = readNoFollowBytes(staging, relative) ?: continue
+                val text = String(bytes, Charsets.ISO_8859_1)
                 val fixed = resolve(text)
-                if (fixed != text) file.writeBytes(fixed.toByteArray(Charsets.ISO_8859_1))
+                if (fixed != text) writeAtomicNoFollow(staging, relative, fixed)
             }
 
             val links = manifest.getJSONArray("symlinks")
             for (i in 0 until links.length()) {
                 checkCancelled(cancelled)
                 val pair = links.getJSONArray(i)
-                val link = File(staging, pair.getString(0))
+                val link = safeLink(staging, pair.getString(0))
                 val target = resolve(pair.getString(1))
                 link.parentFile?.mkdirs()
                 if (FileTools.exists(link)) FileTools.deleteTree(link)
@@ -332,8 +577,8 @@ class PayloadInstaller(private val context: Context) {
             val executables = manifest.getJSONArray("executables")
             for (i in 0 until executables.length()) {
                 checkCancelled(cancelled)
-                val file = File(staging, executables.getString(i))
-                if (file.isFile) {
+                val file = safeChild(staging, executables.getString(i))
+                if (FileTools.exists(file) && !FileTools.isSymlink(file)) {
                     try {
                         Os.chmod(file.absolutePath, "755".toInt(8))
                     } catch (_: ErrnoException) {
@@ -342,15 +587,28 @@ class PayloadInstaller(private val context: Context) {
                 }
             }
 
-            val launcher = File(staging, manifest.getJSONObject("launcher").getString("python"))
-            if (!launcher.isFile) throw IOException("candidate launcher missing")
-            File(staging, ID_FILE).writeText(payloadId)
-            File(staging, MANIFEST_FILE).writeText(manifest.toString())
+            val launcher = safeChild(staging, manifest.getJSONObject("launcher").getString("python"))
+            if (!FileTools.exists(launcher)) throw IOException("candidate launcher missing")
+            writeAtomicNoFollow(staging, ID_FILE, payloadId)
+            writeAtomicNoFollow(staging, MANIFEST_FILE, manifest.toString())
+            writeAtomicNoFollow(
+                staging,
+                INTEGRITY_FILE,
+                JSONObject().put("format", 1)
+                    .put("payload_id", payloadId)
+                    .put("manifest_sha256", manifestDigest(manifest))
+                    .put("content_sha256", slotContentDigest(staging))
+                    .toString(),
+            )
             checkCancelled(cancelled)
             if (!staging.renameTo(candidate)) throw IOException("无法保存新的运行环境 slot")
             if (cancelled()) {
                 FileTools.deleteTree(candidate)
                 throw InstallCancelledException()
+            }
+            if (!validateSlot(candidate, manifest)) {
+                FileTools.deleteTree(candidate)
+                throw IOException("candidate slot integrity validation failed")
             }
             activateExisting(payloadId, current, cancelled)
             progress(1f, "运行环境已就绪")
@@ -358,6 +616,38 @@ class PayloadInstaller(private val context: Context) {
             FileTools.deleteTree(staging)
             throw t
         }
+    }
+
+    private fun quarantineInvalidActive(payloadId: String, beforeDiscard: (String) -> Unit) {
+        val state = readState()
+        if (state.optStringOrNull("active") != payloadId) return
+        val previous = state.optStringOrNull("previous_good")
+            ?.takeIf { validateSlot(slotDir(it), null) }
+        beforeDiscard(slotDir(payloadId).absolutePath)
+        writeState(
+            previous,
+            null,
+            pending = false,
+            generation = state.optLong("generation", 0L) + 1L,
+            rejected = previous?.let { payloadId },
+        )
+        FileTools.deleteTree(slotDir(payloadId))
+        pruneSlots()
+    }
+
+    private fun quarantineInvalidPreviousGood(payloadId: String, beforeDiscard: (String) -> Unit) {
+        val state = readState()
+        if (state.optStringOrNull("previous_good") != payloadId) return
+        beforeDiscard(slotDir(payloadId).absolutePath)
+        writeState(
+            state.optStringOrNull("active"),
+            null,
+            pending = false,
+            generation = state.optLong("generation", 0L) + 1L,
+            rejected = state.optStringOrNull("rejected"),
+        )
+        FileTools.deleteTree(slotDir(payloadId))
+        pruneSlots()
     }
 
     private fun activateExisting(
@@ -377,13 +667,22 @@ class PayloadInstaller(private val context: Context) {
             rejected = null,
             reusedPreviousGood = reusedPreviousGood,
         )
+        checkCancelled(cancelled)
     }
 
     private fun checkCancelled(cancelled: () -> Boolean) {
         if (cancelled()) throw InstallCancelledException()
     }
 
-    private fun slotDir(id: String): File = File(slotsDir, id)
+    private fun ensureSlotsRoot() {
+        if (FileTools.isSymlink(slotsDir)) throw IOException("payload slots root is symlink")
+        ensureCanonicalInside(filesDir, slotsDir)
+    }
+
+    private fun slotDir(id: String): File {
+        ensureSlotsRoot()
+        return File(slotsDir, id)
+    }
 
     private fun validateSlotId(id: String) {
         if (!isSafeSlotId(id)) throw IOException("unsafe payload slot id")
@@ -395,20 +694,21 @@ class PayloadInstaller(private val context: Context) {
     private fun readState(): JSONObject {
         val candidates = listOf(stateFile, stateBackup)
         for (file in candidates) {
-            if (!file.isFile) continue
+            if (FileTools.isSymlink(file)) throw IOException("运行环境状态文件是 symlink")
+            if (!FileTools.exists(file)) continue
             try {
                 return parseState(file)
             } catch (_: Throwable) {
                 // Try the backup state before declaring no active slot.
             }
         }
-        if (candidates.any { it.exists() }) throw IOException("无法读取运行环境状态，拒绝删除或覆盖已有 slot")
+        if (candidates.any { FileTools.exists(it) }) throw IOException("无法读取运行环境状态，拒绝删除或覆盖已有 slot")
         return JSONObject().put("format", 1).put("generation", 0).put("pending", false)
             .put("reused_previous_good", false)
     }
 
     private fun parseState(file: File): JSONObject {
-        val value = JSONObject(file.readText())
+        val value = JSONObject(readNoFollowText(filesDir, file.name) ?: throw IOException("state file missing"))
         if (value.getInt("format") != 1 || value.getLong("generation") < 0L ||
             value.get("pending") !is Boolean || !value.has("active") || !value.has("previous_good") ||
             (value.has("reused_previous_good") && value.get("reused_previous_good") !is Boolean)) {
@@ -442,26 +742,31 @@ class PayloadInstaller(private val context: Context) {
             put("reused_previous_good", reusedPreviousGood)
         }
         val temp = File(filesDir, "hermes-agent.active.json.tmp")
+        if (FileTools.isSymlink(stateFile) || FileTools.isSymlink(stateBackup) || FileTools.isSymlink(temp)) {
+            throw IOException("拒绝写入 symlink state metadata")
+        }
         FileOutputStream(temp).use { output ->
             output.write(value.toString().toByteArray(Charsets.UTF_8))
             output.fd.sync()
         }
         var prior: JSONObject? = null
         for (file in listOf(stateFile, stateBackup)) {
-            if (!file.isFile) continue
+            if (FileTools.isSymlink(file) || !FileTools.exists(file)) continue
             try {
                 prior = parseState(file)
                 break
             } catch (_: Throwable) {
             }
         }
-        prior?.let { stateBackup.writeText(it.toString()) }
+        prior?.let { writeAtomicNoFollow(filesDir, stateBackup.name, it.toString()) }
+        if (FileTools.isSymlink(stateFile)) throw IOException("state path became symlink")
         if (!temp.renameTo(stateFile)) throw IOException("无法原子写入运行环境状态")
     }
 
     /** Keep only the active and previous-good slots; remove failed/stale candidates. */
     private fun pruneSlots() {
         val state = readState()
+        ensureSlotsRoot()
         val keep = setOfNotNull(state.optStringOrNull("active"), state.optStringOrNull("previous_good"))
         slotsDir.listFiles()?.forEach { child ->
             if (child.name !in keep) {
@@ -499,6 +804,8 @@ class PayloadInstaller(private val context: Context) {
         const val ZIP_ASSET = "payload/payload.zip"
         private const val ID_FILE = ".payload_id"
         private const val MANIFEST_FILE = ".payload_manifest.json"
+        private const val INTEGRITY_FILE = ".payload_integrity.json"
+        private val METADATA_FILES = setOf(ID_FILE, MANIFEST_FILE, INTEGRITY_FILE)
     }
 }
 
@@ -515,7 +822,7 @@ object FileTools {
         false
     }
 
-    private fun isSymlink(file: File): Boolean = try {
+    fun isSymlink(file: File): Boolean = try {
         OsConstants.S_ISLNK(Os.lstat(file.absolutePath).st_mode)
     } catch (_: ErrnoException) {
         false

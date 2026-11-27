@@ -29,10 +29,17 @@ import kotlin.concurrent.thread
  */
 class HermesService : Service() {
 
+    private val lifecycleLock = Any()
     private var worker: Thread? = null
     @Volatile private var process: java.lang.Process? = null
     @Volatile private var pid: Int = 0
     @Volatile private var stopping = false
+    private var commandGeneration = 0L
+    private var activeTeardownGeneration = 0L
+    private var teardownStartId = 0
+    private var teardownInProgress = false
+    private var pendingStart = false
+    private var pendingRestart = false
     private var wakeLock: PowerManager.WakeLock? = null
     private val crashTimes = java.util.concurrent.CopyOnWriteArrayList<Long>()
 
@@ -40,29 +47,38 @@ class HermesService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, notification())
-        when (intent?.action) {
-            ACTION_STOP -> {
-                thread(name = "hermes-stop") {
-                    stopRuntime()
-                    stopForegroundCompat()
-                    stopSelf()
+        val action = intent?.action ?: ACTION_START
+        synchronized(lifecycleLock) {
+            when (action) {
+                ACTION_STOP -> {
+                    commandGeneration += 1L
+                    requestTeardownLocked(startId, restart = false)
                 }
-                return START_NOT_STICKY
+                ACTION_RESTART -> {
+                    commandGeneration += 1L
+                    requestTeardownLocked(startId, restart = true)
+                }
+                else -> {
+                    if (stopping || teardownInProgress) {
+                        commandGeneration += 1L
+                        pendingStart = true
+                        activeTeardownGeneration = commandGeneration
+                    } else if (worker?.isAlive != true) {
+                        commandGeneration += 1L
+                        launchLocked()
+                    }
+                }
             }
-            ACTION_RESTART -> thread(name = "hermes-restart") {
-                stopRuntime()
-                worker?.join()
-                crashTimes.clear()
-                launch()
-            }
-            else -> launch()
         }
-        return START_STICKY
+        return if (action == ACTION_STOP) START_NOT_STICKY else START_STICKY
     }
 
     override fun onDestroy() {
         HermesRuntime.removeListener(notifier)
-        thread(name = "hermes-destroy") { stopRuntime() }
+        synchronized(lifecycleLock) {
+            commandGeneration += 1L
+            requestTeardownLocked(0, restart = false, stopSelfWhenDone = false)
+        }
         releaseWakeLock()
         super.onDestroy()
     }
@@ -74,26 +90,78 @@ class HermesService : Service() {
         HermesRuntime.addListener(notifier)
     }
 
-    @Synchronized
-    private fun launch() {
+    private fun launchLocked() {
         if (worker?.isAlive == true) return
         stopping = false
-        worker = thread(name = "hermes-runtime") { runRuntime() }
+        val generation = commandGeneration
+        worker = thread(name = "hermes-runtime") { runRuntime(generation) }
     }
 
-    private fun runRuntime() {
+    private fun requestTeardownLocked(startId: Int, restart: Boolean, stopSelfWhenDone: Boolean = true) {
+        activeTeardownGeneration = commandGeneration
+        teardownStartId = startId
+        pendingRestart = restart
+        pendingStart = restart
+        stopping = true
+        if (teardownInProgress) return
+        teardownInProgress = true
+        thread(name = if (restart) "hermes-restart" else "hermes-stop") {
+            teardownLoop(stopSelfWhenDone)
+        }
+    }
+
+    private fun isGenerationCurrent(generation: Long): Boolean = synchronized(lifecycleLock) {
+        generation == commandGeneration && !stopping
+    }
+
+    private fun requireGeneration(generation: Long) {
+        if (!isGenerationCurrent(generation)) throw PayloadInstaller.InstallCancelledException()
+    }
+
+    private fun teardownLoop(stopSelfWhenDone: Boolean) {
+        while (true) {
+            val generation: Long
+            synchronized(lifecycleLock) {
+                generation = activeTeardownGeneration
+            }
+            stopRuntime(generation)
+            synchronized(lifecycleLock) {
+                if (generation != activeTeardownGeneration) continue
+                if (pendingStart || pendingRestart) {
+                    pendingStart = false
+                    pendingRestart = false
+                    teardownInProgress = false
+                    stopping = false
+                    crashTimes.clear()
+                    launchLocked()
+                    return
+                }
+                teardownInProgress = false
+                stopping = false
+                if (stopSelfWhenDone) {
+                    stopForegroundCompat()
+                    stopSelfResult(teardownStartId)
+                }
+                return
+            }
+        }
+    }
+
+    private fun runRuntime(generation: Long) {
         val installer = PayloadInstaller(this)
         var readyFile: File? = null
         var attemptedRoot: String? = null
         var pump: Thread? = null
         try {
+            requireGeneration(generation)
             attemptedRoot = installer.root.absolutePath
             if (!installer.hasPayload()) {
                 throw IOException("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
             }
             val includedManifest = installer.manifest()
             if (installer.activeSlotId() == null) quiescePayload(installer.root.absolutePath)
-            installer.migrateLegacy(includedManifest)
+            installer.migrateLegacy { !isGenerationCurrent(generation) }
+            requireGeneration(generation)
             val recovery = installer.recoverPending(::quiescePayload)
             attemptedRoot = installer.root.absolutePath
             val manifest = installer.selectedManifest(includedManifest)
@@ -109,8 +177,10 @@ class HermesService : Service() {
             HermesRuntime.update { it.copy(exitCode = null) }
 
             quiescePayload(installer.root.absolutePath)
+            requireGeneration(generation)
             installer.pruneStaleSlots()
 
+            requireGeneration(generation)
             val needsInstall = installer.needsInstall(manifest)
             val canReuse = installer.canReuseSlot(manifest)
             if (needsInstall && !canReuse) {
@@ -118,20 +188,26 @@ class HermesService : Service() {
                 val need = payloadBytes * 2L + 200L * 1024 * 1024
                 val free = filesDir.usableSpace
                 if (free < need) {
+                    if (!isGenerationCurrent(generation)) return
                     fail("存储空间不足：需要约 ${need / 1_000_000} MB，当前可用 ${free / 1_000_000} MB")
                     return
                 }
             }
             if (needsInstall) {
+                requireGeneration(generation)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.INSTALLING, progress = 0f, message = "首次运行，正在解压运行环境…") }
-                installer.install(manifest, { p, label ->
-                    HermesRuntime.update { it.copy(progress = p, message = label) }
-                }) { stopping }
+                installer.install(
+                    manifest,
+                    { p, label -> HermesRuntime.update { it.copy(progress = p, message = label) } },
+                    { !isGenerationCurrent(generation) },
+                    ::quiescePayload,
+                )
+                requireGeneration(generation)
                 attemptedRoot = installer.root.absolutePath
                 applyManifestIdentity(installer, manifest, updateError)
                 log("运行环境已安装：$payloadId")
             }
-            if (stopping) {
+            if (!isGenerationCurrent(generation)) {
                 if (installer.activationPending()) {
                     val restored = installer.rollback(::quiescePayload, rejectFailed = false)
                     applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-install-cancelled")
@@ -169,16 +245,32 @@ class HermesService : Service() {
             env["HERMES_WEBUI_PASSWORD"] = token
             env.remove("HERMES_DASHBOARD_SESSION_TOKEN")
             log("启动：Hermes WebUI，手机本地端口 $port")
-            val proc = pb.start()
-            process = proc
-            pid = ProcUtil.findChild(cmd[0]) ?: 0
+            val proc: java.lang.Process
+            synchronized(lifecycleLock) {
+                if (generation != commandGeneration || stopping) {
+                    throw PayloadInstaller.InstallCancelledException()
+                }
+                proc = pb.start()
+                process = proc
+            }
+            val childPid = ProcUtil.findChild(cmd[0]) ?: 0
+            synchronized(lifecycleLock) {
+                if (generation != commandGeneration || stopping) {
+                    proc.destroy()
+                    throw PayloadInstaller.InstallCancelledException()
+                }
+                pid = childPid
+            }
             HermesRuntime.update { it.copy(pid = pid) }
             pump = thread(name = "hermes-log") { pumpLog(proc) }
 
-            if (waitHealthy(port, proc, ready)) {
+            if (waitHealthy(port, proc, ready, generation)) {
                 val cookie = ready.readText()
                 ready.delete()
-                installer.markHealthy()
+                synchronized(lifecycleLock) {
+                    requireGeneration(generation)
+                    installer.markHealthy()
+                }
                 applyManifestIdentity(installer, manifest, updateError)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
                 log("Hermes 已就绪：http://127.0.0.1:$port")
@@ -188,7 +280,7 @@ class HermesService : Service() {
             val code = proc.waitFor()
             stopOwnedProcess(attemptedRoot)
             pump?.join(2000)
-            if (stopping) {
+            if (!isGenerationCurrent(generation)) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", exitCode = code, pid = 0) }
             } else {
                 val killed = code == 137 || code == 9
@@ -201,10 +293,13 @@ class HermesService : Service() {
                     HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STARTING, message = "正在自动重启…", exitCode = code, pid = 0) }
                     releaseWakeLock()
                     Thread.sleep(2000L * crashTimes.size)
-                    if (!stopping) {
-                        thread(name = "hermes-relaunch") {
-                            worker?.join()
-                            launch()
+                    thread(name = "hermes-relaunch") {
+                        worker?.join()
+                        synchronized(lifecycleLock) {
+                            if (generation != commandGeneration || stopping || teardownInProgress) {
+                                pendingStart = true
+                                activeTeardownGeneration = commandGeneration
+                            } else launchLocked()
                         }
                     }
                     return
@@ -216,7 +311,7 @@ class HermesService : Service() {
             try {
                 stopOwnedProcess(attemptedRoot)
                 pump?.join(2000)
-                val cancelled = stopping || t is PayloadInstaller.InstallCancelledException
+                val cancelled = !isGenerationCurrent(generation) || t is PayloadInstaller.InstallCancelledException
                 if (cancelled) {
                     if (installer.activationPending()) {
                         val restored = installer.rollback(::quiescePayload, rejectFailed = false)
@@ -232,9 +327,9 @@ class HermesService : Service() {
                     val restored = installer.rollback(::quiescePayload)
                     val restoredManifest = installer.installedManifest()
                     applyManifestIdentity(installer, restoredManifest ?: org.json.JSONObject(), "payload-activation-rollback")
-                    if (!stopping && restored != null && restoredManifest != null) {
+                    if (isGenerationCurrent(generation) && restored != null && restoredManifest != null) {
                         log("运行环境激活失败，已回滚到 $restored，重新启动 previous-good")
-                        return runRuntime()
+                        return runRuntime(generation)
                     }
                 } else {
                     applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-activation-failed")
@@ -325,10 +420,10 @@ class HermesService : Service() {
         }
     }
 
-    private fun waitHealthy(port: Int, proc: java.lang.Process, ready: File): Boolean {
+    private fun waitHealthy(port: Int, proc: java.lang.Process, ready: File, generation: Long): Boolean {
         val deadline = System.currentTimeMillis() + 10 * 60 * 1000L
         while (System.currentTimeMillis() < deadline) {
-            if (stopping || !proc.isAliveCompat()) return false
+            if (!isGenerationCurrent(generation) || !proc.isAliveCompat()) return false
             try {
                 if (!ready.isFile) { Thread.sleep(500); continue }
                 val conn = URL("http://127.0.0.1:$port/health").openConnection(java.net.Proxy.NO_PROXY) as HttpURLConnection
@@ -337,7 +432,7 @@ class HermesService : Service() {
                 conn.instanceFollowRedirects = false
                 val code = conn.responseCode
                 conn.disconnect()
-                if (code == 200 && proc.isAliveCompat()) return true
+                if (code == 200 && proc.isAliveCompat() && isGenerationCurrent(generation)) return true
             } catch (_: Exception) {
             }
             Thread.sleep(700)
@@ -365,22 +460,32 @@ class HermesService : Service() {
         }
     }
 
-    private fun stopRuntime() {
-        stopping = true
-        val proc = process
-        if (proc != null || pid > 0) {
-            HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
-            val target = if (pid > 0) pid else 0
-            if (target > 0) ProcUtil.stopTree(target) else proc?.destroy()
-            try {
-                proc?.waitFor()
-            } catch (_: InterruptedException) {
+    private fun stopRuntime(generation: Long) {
+        val proc: java.lang.Process?
+        val target: Int
+        synchronized(lifecycleLock) {
+            if (generation != activeTeardownGeneration) return
+            stopping = true
+            proc = process
+            target = pid
+            if (proc != null || target > 0 || worker?.isAlive == true) {
+                HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
             }
+            // Re-check the teardown generation immediately before killing the owned process.
+            if (generation != activeTeardownGeneration) return
+            if (target > 0) ProcUtil.stopTree(target) else proc?.destroy()
+        }
+        try {
+            proc?.waitFor()
+        } catch (_: InterruptedException) {
         }
         worker?.join()
-        process = null
-        pid = 0
-        HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
+        synchronized(lifecycleLock) {
+            if (generation != activeTeardownGeneration) return
+            process = null
+            pid = 0
+            HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
+        }
     }
 
     private fun choosePort(preferred: Int): Int {
