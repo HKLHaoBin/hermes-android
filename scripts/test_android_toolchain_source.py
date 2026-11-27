@@ -15,6 +15,7 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         cls.asset_server = (KOTLIN / "AssetServer.kt").read_text(encoding="utf-8")
         cls.runtime_env = (KOTLIN / "RuntimeEnv.kt").read_text(encoding="utf-8")
         cls.relocator = (ROOT / "scripts/relocate_payload.py").read_text(encoding="utf-8")
+        cls.smoke_env = (ROOT / "scripts/smoke_env.py").read_text(encoding="utf-8")
         cls.smoke = (ROOT / "scripts/smoke.sh").read_text(encoding="utf-8")
         cls.workflow = (ROOT / ".github/workflows/build-apk.yml").read_text(encoding="utf-8")
         cls.catalog = json.loads(
@@ -35,6 +36,25 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertTrue(all(item.get("license") for item in self.catalog["packages"]))
         names = {item["name"] for item in self.catalog["packages"]}
         self.assertTrue({"bash", "git", "curl", "wget", "tar", "unzip"} <= names)
+
+    def test_issue5_requested_tools_are_locked_with_declared_entrypoints(self):
+        requested = {
+            "ripgrep": "bin/rg",
+            "ffmpeg": "bin/ffmpeg",
+            "python": "bin/python",
+            "nodejs": "bin/node",
+            "npm": "bin/npm",
+            "uv": "bin/uv",
+        }
+        catalog_by_name = {item["name"]: item for item in self.catalog["packages"]}
+        self.assertTrue(set(requested) <= set(self.lock["roots"]))
+        self.assertTrue(set(requested) <= set(catalog_by_name))
+        for name, entrypoint in requested.items():
+            package = catalog_by_name[name]
+            self.assertEqual(package["entrypoints"], [entrypoint])
+            self.assertRegex(package["artifact"]["sha256"], r"^[0-9a-f]{64}$")
+            self.assertTrue(package["artifact"]["size"] > 0)
+            self.assertEqual(package["source"]["package"], name)
 
     def test_catalog_and_source_lock_have_one_repository_identity(self):
         catalog_repo = self.catalog["repository"]
@@ -69,6 +89,17 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn("HERMES_ANDROID_TOOLCHAIN_ROOT", self.runtime_env)
         self.assertIn("HERMES_ANDROID_TOOLCHAIN_CATALOG", self.runtime_env)
 
+    def test_native_inventory_validates_authoritative_selection(self):
+        manager = (KOTLIN / "ToolchainManager.kt").read_text(encoding="utf-8")
+        self.assertIn("selectionStatus", manager)
+        self.assertIn(".hermes-package.json", manager)
+        self.assertIn("artifact_sha256", manager)
+        self.assertIn("entrypoints", manager)
+        self.assertIn('SelectionStatus("outdated"', manager)
+        self.assertIn("activeTreeValid", manager)
+        self.assertIn('optJSONObject("exports")', manager)
+        self.assertIn('status.state != "active"', manager)
+
     def test_relocator_stages_toolchain_script_catalog_and_manifest_paths(self):
         self.assertIn("toolchain_catalog", self.relocator)
         self.assertIn("toolchain_script", self.relocator)
@@ -77,6 +108,14 @@ class AndroidToolchainSourceTests(unittest.TestCase):
     def test_container_smoke_exercises_locked_dependency_closure(self):
         self.assertIn("install-closure", self.smoke)
         self.assertIn("TOOLCHAIN_INSTALL_OK", self.smoke)
+        self.assertIn("installed-bash", self.smoke)
+        self.assertIn("env --shell", self.smoke)
+
+    def test_smoke_environment_refreshes_from_installed_toolchain_state(self):
+        self.assertIn("refresh_toolchain_env", self.smoke_env)
+        self.assertIn("env --shell", self.smoke_env)
+        self.assertIn("HERMES_ANDROID_TOOLCHAIN_PATH", self.smoke_env)
+        self.assertIn("HERMES_ANDROID_TOOLCHAIN_LD_LIBRARY_PATH", self.smoke_env)
 
     def test_workflow_preserves_job_ledger_and_adds_toolchain_contracts(self):
         self.assertIn("scripts/test_job_ledger_contract.py", self.workflow)

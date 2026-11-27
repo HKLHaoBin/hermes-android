@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import shutil
 import tarfile
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -190,6 +192,21 @@ class AndroidToolchainTests(unittest.TestCase):
         with self.assertRaisesRegex(PreflightError, "space"):
             store.preflight("libfoo", self.host(free_bytes=1))
         self.assertFalse((self.root / "tools").exists())
+
+    def test_required_bytes_includes_normalized_termux_prefix_copy(self):
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        spec = catalog.package("tool")
+        required = store._required_bytes(spec, {}, {})
+        self.assertEqual(
+            required,
+            spec.artifact.size + (2 * spec.install_bytes) + (16 * 1024 * 1024),
+        )
 
     def test_preflight_rejects_catalog_conflict_before_write(self):
         lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
@@ -380,6 +397,159 @@ class AndroidToolchainTests(unittest.TestCase):
         ):
             store.install("libfoo", lib, self.host())
         self.assertEqual(events[:2], ["lock", "preflight"])
+
+    def test_transaction_lock_verifies_owner_nonce_and_process_start_time(self):
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        held = store._acquire_transaction()
+        owner_path = held.path / "owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        self.assertEqual(owner["nonce"], held.nonce)
+        self.assertEqual(owner["pid"], os.getpid())
+        self.assertTrue(owner["start_time"])
+        with self.assertRaisesRegex(TransactionError, "active"):
+            ToolchainStore(self.root / "tools", catalog)._acquire_transaction()
+        store._release_transaction(held)
+        self.assertFalse(held.path.exists())
+
+        stale = self.root / "tools" / ".transaction.lock"
+        stale.mkdir(parents=True)
+        (stale / "owner.json").write_text(json.dumps({
+            "pid": os.getpid(),
+            "nonce": "reused-pid",
+            "start_time": "not-this-process-start",
+            "created_at": time.time() - 30,
+        }), encoding="utf-8")
+        old = time.time() - 30
+        os.utime(stale, (old, old))
+        recovered = store._acquire_transaction()
+        self.assertNotEqual(recovered.nonce, "reused-pid")
+        store._release_transaction(recovered)
+
+    def test_transaction_release_does_not_remove_replaced_owner(self):
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        held = store._acquire_transaction()
+        owner_path = held.path / "owner.json"
+        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        owner["nonce"] = "replacement-owner"
+        owner_path.write_text(json.dumps(owner), encoding="utf-8")
+        store._release_transaction(held)
+        self.assertTrue(held.path.is_dir())
+        shutil.rmtree(held.path)
+
+    def test_environment_exports_only_authoritatively_active_entries(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        store.install("libfoo", lib, self.host())
+        store.install("tool", tool, self.host())
+        exported = store.environment(self.host())
+        self.assertIn(str(self.root / "tools/entries/tool/1.0.0/bin"), exported["path"])
+        entry = self.root / "tools" / "entries" / "tool" / "1.0.0"
+        (entry / "bin/tool").unlink()
+        self.assertNotIn(str(self.root / "tools/entries/tool/1.0.0/bin"), store.environment(self.host())["path"])
+
+    def test_inventory_and_environment_reject_active_package_with_invalid_dependency_tree(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        store.install("libfoo", lib, self.host())
+        store.install("tool", tool, self.host())
+        state_path = self.root / "tools" / "state.json"
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["active"].pop("libfoo")
+        state["facts"]["packages"].pop("libfoo")
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        row = next(item for item in store.inventory(self.host())["packages"] if item["name"] == "tool")
+        self.assertEqual(row["state"], "blocked")
+        self.assertNotIn(str(self.root / "tools/entries/tool/1.0.0/bin"), store.environment(self.host())["path"])
+
+    def test_issue5_requested_tools_cover_inventory_install_update_remove_rollback(self):
+        requested = {
+            "ripgrep": "bin/rg",
+            "ffmpeg": "bin/ffmpeg",
+            "python": "bin/python",
+            "nodejs": "bin/node",
+            "npm": "bin/npm",
+            "uv": "bin/uv",
+        }
+        archives = {}
+        artifacts = {}
+        for name, entrypoint in requested.items():
+            archive = self.root / f"{name}-1.0.0.zip"
+            with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as compressed:
+                compressed.writestr(entrypoint, "#!/system/bin/sh\necho smoke\n")
+            data = archive.read_bytes()
+            archives[name] = archive
+            artifacts[name] = (hashlib.sha256(data).hexdigest(), len(data), entrypoint)
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        base = self.catalog({"libfoo": (lib_hash, lib_size), "tool": (tool_hash, tool_size)}).to_dict()
+        base["packages"] = [{
+            "name": name,
+            "version": "1.0.0",
+            "architecture": "aarch64",
+            "min_sdk": 24,
+            "dependencies": [],
+            "conflicts": [],
+            "source": {"package": name, "homepage": "https://packages.invalid/" + name},
+            "license": "MIT",
+            "entrypoints": [entrypoint],
+            "exports": {"path": [entrypoint.rsplit("/", 1)[0]], "ld_library_path": []},
+            "install_bytes": 128,
+            "artifact": {
+                "url": f"https://packages.invalid/{name}_1.0.0.zip",
+                "filename": f"{name}_1.0.0.zip",
+                "sha256": artifacts[name][0],
+                "size": artifacts[name][1],
+            },
+        } for name, entrypoint in requested.items()]
+        catalog = Catalog.from_dict(base)
+        store = ToolchainStore(self.root / "tools", catalog)
+        for name in requested:
+            store.install(name, archives[name], self.host())
+        active = store.inventory(self.host())["active"]
+        self.assertEqual(set(active), set(requested))
+
+        update = self.root / "ripgrep-2.0.0.zip"
+        with zipfile.ZipFile(update, "w", compression=zipfile.ZIP_DEFLATED) as compressed:
+            compressed.writestr("bin/rg", "#!/system/bin/sh\necho updated\n")
+        update_data = update.read_bytes()
+        updated_doc = catalog.to_dict()
+        updated = next(item for item in updated_doc["packages"] if item["name"] == "ripgrep")
+        updated["version"] = "2.0.0"
+        updated["artifact"].update({
+            "url": "https://packages.invalid/ripgrep_2.0.0.zip",
+            "filename": "ripgrep_2.0.0.zip",
+            "sha256": hashlib.sha256(update_data).hexdigest(),
+            "size": len(update_data),
+        })
+        updated_store = ToolchainStore(self.root / "tools", Catalog.from_dict(updated_doc))
+        updated_store.update("ripgrep", update, self.host())
+        self.assertEqual(updated_store.inventory(self.host())["active"]["ripgrep"]["version"], "2.0.0")
+        updated_store.rollback()
+        self.assertEqual(updated_store.inventory(self.host())["active"]["ripgrep"]["version"], "1.0.0")
+        updated_store.remove("uv")
+        self.assertNotIn("uv", updated_store.inventory(self.host())["active"])
 
     def test_inventory_is_versioned_queryable_and_truthful(self):
         _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")

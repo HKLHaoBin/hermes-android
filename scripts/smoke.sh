@@ -17,12 +17,6 @@ for mode in ld-path runpath-only; do
   if ! "$S/files/run.sh" --py "$S/smoke_runtime_fixes.py" "$R"; then
     RC=1
   fi
-  # Resolved through the PATH the app sets, like Hermes' own tool lookups.
-  "$S/files/run.sh" --exec python --version 2>&1 | first python
-  "$S/files/run.sh" --exec node --version 2>&1 | first node
-  "$S/files/run.sh" --exec npm --version 2>&1 | first npm
-  "$S/files/run.sh" --exec rg --version 2>&1 | first rg
-  "$S/files/run.sh" --exec ffmpeg -version 2>&1 | first ffmpeg
   if [ "$mode" = ld-path ]; then
     if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
         --catalog "$R/webui/toolchain/catalog.json" \
@@ -34,6 +28,29 @@ for mode in ld-path runpath-only; do
       dump "$S/toolchain-install.json"
       RC=1
     fi
+  fi
+  # Refreshes from installed state.json/facts.json, matching RuntimeEnv.kt;
+  # these commands must resolve the installed toolchain, not the payload.
+  check_exec() {
+    label="$1"
+    shift
+    output=$("$S/files/run.sh" --exec "$@" 2>&1)
+    status=$?
+    printf '%s\n' "$output" | first "$label"
+    if [ "$status" -ne 0 ]; then RC=1; fi
+  }
+  check_exec installed-bash bash --version
+  check_exec python python --version
+  check_exec node node --version
+  check_exec npm npm --version
+  check_exec rg rg --version
+  check_exec ffmpeg ffmpeg -version
+  if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
+      --catalog "$R/webui/toolchain/catalog.json" \
+      --root "$HERMES_ANDROID_TOOLCHAIN_ROOT" env --shell > "$S/toolchain-env-$mode.sh"; then
+    grep -q 'HERMES_ANDROID_TOOLCHAIN_PATH=' "$S/toolchain-env-$mode.sh" || RC=1
+  else
+    RC=1
   fi
   if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
       --catalog "$R/webui/toolchain/catalog.json" \

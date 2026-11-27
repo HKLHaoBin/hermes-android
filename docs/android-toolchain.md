@@ -9,6 +9,7 @@ Supported baseline
 - Source authority: the Termux main `aarch64` repository is locked in `toolchain/termux-catalog.lock.json`.
 - Build verification: CI downloads `InRelease`, `Packages.gz`, and the Termux keyring artifact; checks exact size/SHA-256 values; verifies the InRelease with `gpgv` and the locked key fingerprint; then emits `android/app/src/main/assets/toolchain/catalog.json`.
 - The generated catalog is embedded in the APK and records the repository identity, package versions, dependencies, artifact URLs, sizes, SHA-256 values, target facts, entrypoints, PATH/library exports, source metadata, and capability assumptions.
+- The locked default roots cover the Issue #5 tool inventory: `bash`, `git`, `curl`, `wget`, `tar`, `unzip`, `coreutils`, `findutils`, `ripgrep`, `ffmpeg`, `python`, `nodejs`, `npm`, and `uv`; every root and dependency is resolved from the same verified signed `aarch64` index.
 
 Store layout
 
@@ -26,10 +27,11 @@ Hermes user data remains under `filesDir/home` and is not inside the tool store.
 
 Operations and safety
 
-The payload-side `android_toolchain.py` supports `inventory`, `preflight`, `install`, `update`, `remove`, and `rollback`. `install`/`update` may receive a local archive for offline tests; without one they download only the exact HTTPS artifact URL recorded in the verified catalog and verify the response bytes before extraction.
+The payload-side `android_toolchain.py` supports `inventory`, `preflight`, `install`, `update`, `remove`, `rollback`, and installed-state `env` export. `install`/`update` may receive a local archive for offline tests; without one they download only the exact HTTPS artifact URL recorded in the verified catalog and verify the response bytes before extraction.
 
 - `preflight` rejects wrong ABI, API, libc, missing dependency, failed app-private execution/writable-root checks, or insufficient peak space before extraction.
 - `install` and `update` verify the archive size and SHA-256 from the locked catalog before extraction. Archives are extracted into a transaction directory, checked for path traversal, absolute/escaping symlinks, unsupported hardlinks/device entries, and declared executable entrypoints, then activated by an atomic selection commit.
+- The cross-process transaction owner records a nonce and process start identity; stale locks are reclaimed only when the recorded process identity is no longer live, and release verifies ownership before deleting the lock.
 - The manager never executes archive contents during installation.
 - `update` keeps the old active entry as the previous selection. Reinstalling a version never deletes a path referenced by active or previous state.
 - `remove` removes the selected package and recursively drops dependencies that are no longer referenced by another active package. Immutable entry data remains available for repair/rollback.
@@ -41,6 +43,7 @@ Android integration
 - `/__android/status.json` now contains `capabilitySchemaVersion`, the existing capability IDs, and a `toolchain` inventory object.
 - `/__android/toolchain.json` returns the same machine-readable inventory without the runtime status envelope.
 - `RuntimeEnv.kt` prepends active package PATH/library exports to the sealed base payload and retains explicit `/system/bin`, `/system/xbin`, and `/vendor/bin` fallbacks.
+- The CI smoke launcher refreshes the same exports from installed `state.json`/`facts.json` after closure installation instead of trusting the payload manifest's static paths.
 - The relocator stages the manager script and catalog into the payload manifest as `toolchain_script` and `toolchain_catalog`.
 
 Integration contract with the Issue #1 staging branch

@@ -155,6 +155,12 @@ def _entrypoints(name: str) -> list[str]:
         "coreutils": ["bin/ls"],
         "findutils": ["bin/find"],
         "termux-tools": ["bin/termux-info"],
+        "ripgrep": ["bin/rg"],
+        "ffmpeg": ["bin/ffmpeg"],
+        "python": ["bin/python"],
+        "nodejs": ["bin/node"],
+        "npm": ["bin/npm"],
+        "uv": ["bin/uv"],
     }
     return known.get(name, [])
 

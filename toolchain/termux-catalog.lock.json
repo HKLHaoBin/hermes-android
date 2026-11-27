@@ -28,6 +28,12 @@
     "tar",
     "unzip",
     "coreutils",
-    "findutils"
+    "findutils",
+    "ripgrep",
+    "ffmpeg",
+    "python",
+    "nodejs",
+    "npm",
+    "uv"
   ]
 }

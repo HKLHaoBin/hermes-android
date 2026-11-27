@@ -14,6 +14,7 @@ import json
 import os
 import posixpath
 import re
+import shlex
 import shutil
 import stat
 import tarfile
@@ -83,6 +84,59 @@ class HostFacts:
     root: Path
     free_bytes: int
     exec_probe: bool
+
+
+@dataclass(frozen=True)
+class TransactionLock:
+    path: Path
+    nonce: str
+    pid: int
+    start_time: str | None
+
+
+TRANSACTION_LOCK_GRACE_SECONDS = 1.0
+
+
+def _process_start_time(pid: int) -> str | None:
+    """Return a kernel/process start identity when the host exposes one."""
+    proc_stat = Path("/proc") / str(pid) / "stat"
+    try:
+        text = proc_stat.read_text(encoding="ascii")
+        fields = text[text.rfind(")") + 2 :].split()
+        return fields[19]
+    except (OSError, IndexError, ValueError):
+        pass
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class FileTime(ctypes.Structure):
+            _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return None
+        creation = FileTime()
+        exit_time = FileTime()
+        kernel_time = FileTime()
+        user_time = FileTime()
+        try:
+            if not kernel32.GetProcessTimes(
+                handle,
+                ctypes.byref(creation),
+                ctypes.byref(exit_time),
+                ctypes.byref(kernel_time),
+                ctypes.byref(user_time),
+            ):
+                return None
+            return str((creation.high << 32) | creation.low)
+        finally:
+            kernel32.CloseHandle(handle)
+    except (AttributeError, OSError, ValueError):
+        return None
 
 
 
@@ -403,9 +457,11 @@ class ToolchainStore:
         return sum(_tree_bytes(self.root / entry) for entry in entries)
 
     def _required_bytes(self, spec: PackageSpec, active: dict[str, Any], previous: dict[str, Any]) -> int:
-        # Active and rollback selections can coexist with the download and staging tree.
+        # Active and rollback selections can coexist with the download, raw
+        # extraction tree, and the second normalized Termux prefix copy.
         retained = self._selection_bytes(active, previous)
-        return spec.artifact.size + spec.install_bytes + retained + 16 * 1024 * 1024
+        normalized_copy = spec.install_bytes
+        return spec.artifact.size + spec.install_bytes + normalized_copy + retained + 16 * 1024 * 1024
 
     def _selection_status(
         self,
@@ -444,7 +500,11 @@ class ToolchainStore:
             return False, "package manifest is unreadable"
         if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
             return False, "package manifest is missing or invalid"
-        if manifest.get("name") != name or manifest.get("version") != version:
+        if (
+            manifest.get("name") != name
+            or manifest.get("version") != version
+            or manifest.get("target") != self.catalog.target["triple"]
+        ):
             return False, "package manifest does not match selection"
         manifest_hash = manifest.get("artifact_sha256")
         if not isinstance(manifest_hash, str) or not _HEX64.fullmatch(manifest_hash):
@@ -472,34 +532,108 @@ class ToolchainStore:
                 return False, f"declared entrypoint cannot be inspected: {relative}"
         return True, ""
 
-    def _acquire_transaction(self) -> Path:
+    def _active_tree_valid(self, name: str, active: dict[str, Any], visiting: set[str] | None = None) -> bool:
+        visiting = set() if visiting is None else visiting
+        if name in visiting:
+            return False
+        valid, _ = self._selection_status(name, active.get(name))
+        if not valid:
+            return False
+        visiting.add(name)
+        try:
+            return all(
+                self._active_tree_valid(dependency, active, visiting)
+                for dependency in self.catalog.package(name).dependencies
+            )
+        finally:
+            visiting.remove(name)
+
+    @staticmethod
+    def _transaction_owner(lock: Path) -> dict[str, Any] | None:
+        try:
+            value = json.loads((lock / "owner.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return None
+        return value if isinstance(value, dict) else None
+
+    @staticmethod
+    def _transaction_owner_alive(owner: dict[str, Any] | None) -> bool:
+        if not isinstance(owner, dict):
+            return False
+        try:
+            pid = int(owner["pid"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        try:
+            os.kill(pid, 0)
+        except PermissionError:
+            return True
+        except OSError:
+            return False
+        expected_start = owner.get("start_time")
+        actual_start = _process_start_time(pid)
+        if isinstance(expected_start, str) and expected_start and actual_start is not None:
+            return expected_start == actual_start
+        # If the platform cannot expose process start time, fail closed rather
+        # than reclaiming a live PID whose identity cannot be verified.
+        return True
+
+    @staticmethod
+    def _transaction_lock_old(lock: Path) -> bool:
+        try:
+            return time.time() - lock.stat().st_mtime > TRANSACTION_LOCK_GRACE_SECONDS
+        except OSError:
+            return True
+
+    def _acquire_transaction(self) -> TransactionLock:
         self.root.mkdir(parents=True, exist_ok=True)
         lock = self.root / ".transaction.lock"
-        try:
-            lock.mkdir()
-        except FileExistsError as exc:
-            owner = lock / "pid"
-            stale = False
+        for _ in range(4):
             try:
-                pid = int(owner.read_text(encoding="ascii"))
-                os.kill(pid, 0)
-            except (OSError, ValueError):
-                stale = True
-            if stale and time.time() - lock.stat().st_mtime > 1:
-                shutil.rmtree(lock, ignore_errors=True)
                 lock.mkdir()
-            else:
-                raise TransactionError("another toolchain transaction is active") from exc
+                break
+            except FileExistsError as exc:
+                owner = self._transaction_owner(lock)
+                if self._transaction_owner_alive(owner) or not self._transaction_lock_old(lock):
+                    raise TransactionError("another toolchain transaction is active") from exc
+                quarantine = self.root / f".transaction-stale-{uuid.uuid4().hex}"
+                try:
+                    lock.rename(quarantine)
+                except FileNotFoundError:
+                    continue
+                except OSError as rename_error:
+                    raise TransactionError("cannot recover stale toolchain transaction") from rename_error
+                shutil.rmtree(quarantine, ignore_errors=True)
+        else:
+            raise TransactionError("cannot acquire toolchain transaction lock")
+        nonce = uuid.uuid4().hex
+        pid = os.getpid()
+        start_time = _process_start_time(pid)
+        owner = {
+            "pid": pid,
+            "nonce": nonce,
+            "start_time": start_time or "",
+            "created_at": time.time(),
+        }
         try:
-            (lock / "pid").write_text(str(os.getpid()), encoding="ascii")
+            temporary = lock / f".owner-{nonce}.tmp"
+            temporary.write_text(json.dumps(owner, sort_keys=True), encoding="utf-8")
+            os.replace(temporary, lock / "owner.json")
         except OSError:
             shutil.rmtree(lock, ignore_errors=True)
             raise
-        return lock
+        return TransactionLock(lock, nonce, pid, start_time)
 
     @staticmethod
-    def _release_transaction(lock: Path) -> None:
-        shutil.rmtree(lock, ignore_errors=True)
+    def _release_transaction(lock: TransactionLock) -> None:
+        owner = ToolchainStore._transaction_owner(lock.path)
+        if not owner or owner.get("nonce") != lock.nonce or owner.get("pid") != lock.pid:
+            return
+        expected_start = owner.get("start_time")
+        actual_start = _process_start_time(lock.pid)
+        if expected_start and actual_start is not None and expected_start != actual_start:
+            return
+        shutil.rmtree(lock.path, ignore_errors=True)
 
     def preflight(self, name: str, host: HostFacts, *, abi: str | None = None) -> PackageSpec:
         spec = self.catalog.package(name)
@@ -525,10 +659,7 @@ class ToolchainStore:
         ]
         if conflicts:
             raise PreflightError(f"package conflicts with active package: {', '.join(sorted(conflicts))}")
-        missing = [
-            dep for dep in spec.dependencies
-            if not self._selection_status(dep, active.get(dep))[0]
-        ]
+        missing = [dep for dep in spec.dependencies if not self._active_tree_valid(dep, active)]
         if missing:
             raise PreflightError(f"dependency not installed: {', '.join(missing)}")
         required = self._required_bytes(spec, active, state["previous"])
@@ -852,6 +983,32 @@ class ToolchainStore:
             result = self.install(package_name, archive, host)
         return result
 
+    def environment(self, host: HostFacts) -> dict[str, list[str]]:
+        state = self._state()
+        facts = state.get("facts", {}).get("packages", {}) if isinstance(state.get("facts"), dict) else {}
+        path_entries: list[str] = []
+        ld_entries: list[str] = []
+        for name in sorted(state["active"]):
+            selected = state["active"].get(name)
+            valid, _ = self._selection_status(name, selected)
+            if not valid or not self._active_tree_valid(name, state["active"]):
+                continue
+            package_facts = facts.get(name) if isinstance(facts, dict) else None
+            if not isinstance(package_facts, dict):
+                continue
+            for field, output in (("path", path_entries), ("ld_library_path", ld_entries)):
+                values = package_facts.get(field, [])
+                if not isinstance(values, list):
+                    continue
+                for relative in values:
+                    if not isinstance(relative, str) or not relative:
+                        continue
+                    try:
+                        output.append(str(self._safe_path(self.root, relative)))
+                    except TransactionError:
+                        continue
+        return {"path": list(dict.fromkeys(path_entries)), "ld_library_path": list(dict.fromkeys(ld_entries))}
+
     def remove(self, name: str) -> dict[str, Any]:
         with self._lock:
             transaction_lock = self._acquire_transaction()
@@ -916,7 +1073,12 @@ class ToolchainStore:
             if name in active:
                 valid, reason = self._selection_status(name, active[name])
                 if valid:
-                    status = "active"
+                    missing = [dep for dep in spec.dependencies if not self._active_tree_valid(dep, active)]
+                    if missing:
+                        status = "blocked"
+                        reason = f"dependency not installed: {', '.join(missing)}"
+                    else:
+                        status = "active"
                 elif "outdated" in reason:
                     status = "outdated"
                 else:
@@ -930,7 +1092,7 @@ class ToolchainStore:
             else:
                 missing = [
                     dep for dep in spec.dependencies
-                    if not self._selection_status(dep, active.get(dep))[0]
+                    if not self._active_tree_valid(dep, active)
                 ]
                 conflicts = [
                     package_name
@@ -990,6 +1152,8 @@ def main(argv: list[str] | None = None) -> int:
         command_parser.add_argument("--archive", type=Path)
     closure = sub.add_parser("install-closure")
     closure.add_argument("names", nargs="+")
+    env = sub.add_parser("env")
+    env.add_argument("--shell", action="store_true")
     remove = sub.add_parser("remove")
     remove.add_argument("name")
     sub.add_parser("rollback")
@@ -1017,6 +1181,8 @@ def main(argv: list[str] | None = None) -> int:
             result = getattr(store, args.command)(args.name, args.archive, host)
         elif args.command == "install-closure":
             result = store.install_closure(args.names, host)
+        elif args.command == "env":
+            result = store.environment(host)
         elif args.command == "remove":
             result = store.remove(args.name)
         else:
@@ -1024,7 +1190,11 @@ def main(argv: list[str] | None = None) -> int:
     except (CatalogError, PreflightError, TransactionError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2
-    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    if args.command == "env" and args.shell:
+        print(f"export HERMES_ANDROID_TOOLCHAIN_PATH={shlex.quote(':'.join(result['path']))}")
+        print(f"export HERMES_ANDROID_TOOLCHAIN_LD_LIBRARY_PATH={shlex.quote(':'.join(result['ld_library_path']))}")
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 
