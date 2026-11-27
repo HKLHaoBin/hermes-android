@@ -974,15 +974,29 @@
     renderAttachments();
     const shown = files.length ? (text + (text ? '\n' : '') + files.map(f => '📎 ' + f.name).join('\n')) : text;
     addUser(shown);
+    let localJobId = '';
     try {
       const sid = await ensureSession();
       const refs = files.length ? await uploadAttachments(sid) : [];
       const finalText = [text].concat(refs).filter(Boolean).join('\n\n') || '请查看附件';
       setRunning(true);
+      if (bridge && typeof bridge.registerAgentJob === 'function') {
+        localJobId = bridge.registerAgentJob(sid, finalText) || '';
+        if (localJobId) {
+          if (!bridge.activateAgentJob(localJobId)) throw new Error('后台任务未能激活');
+          addSystem('已加入持久后台任务队列：' + localJobId.slice(0, 8));
+        }
+      }
       const r = await gw.request('prompt.submit', { session_id: sid, text: finalText }, 60000);
-      if (r && r.status === 'queued') addSystem('已加入队列，当前回复结束后处理');
+      if (localJobId) {
+        if (r && (r.status === 'steered' || r.status === 'redirected')) {
+          bridge.cancelAgentJob(localJobId);
+          addSystem('已把新消息交给正在运行的任务');
+        }
+      } else if (r && r.status === 'queued') addSystem('已加入队列，当前回复结束后处理');
       else if (r && (r.status === 'steered' || r.status === 'redirected')) addSystem('已把新消息交给正在运行的任务');
     } catch (e) {
+      if (localJobId && bridge && typeof bridge.cancelAgentJob === 'function') bridge.cancelAgentJob(localJobId);
       setRunning(false);
       addError('发送失败：' + e.message);
     }
@@ -1229,6 +1243,49 @@
     }
   }
 
+  const capabilityStates = {
+    supported: '支持', partial: '部分支持', experimental: '实验性', unavailable: '不可用',
+  };
+  const capabilityLabels = {
+    webui: 'WebUI', runtime: 'Android runtime', cli_tui: 'CLI / TUI', terminal: '终端',
+    skills: 'Skills', plugins: 'Plugins', mcp: 'MCP', browser: '浏览器后端',
+    computer_use: 'Computer use', background_service: '后台服务', job_queue: '持久任务队列',
+    backup_restore: '备份与恢复', real_device_validation: '真机验收',
+  };
+
+  function renderCapabilities() {
+    const list = $('#capabilities');
+    if (!list) return;
+    const declared = status.capabilities || [];
+    const capabilities = Array.isArray(declared) ? declared : [];
+    const available = capabilities.filter(row => row.state === 'supported' || row.state === 'partial').length;
+    $('#capability-summary').textContent = capabilities.length
+      ? `${available}/${capabilities.length} 项可用或部分可用`
+      : '能力声明暂不可用';
+    $('#capability-hint').textContent = [
+      status.androidApi ? 'API ' + status.androidApi : '',
+      status.abi || '',
+    ].filter(Boolean).join(' · ') || '等待 runtime';
+    list.innerHTML = '';
+    if (!capabilities.length) {
+      list.appendChild(el('div', 'muted', 'runtime 尚未返回能力声明'));
+      return;
+    }
+    capabilities.forEach(row => {
+      const state = capabilityStates[row.state] || row.state || '未知';
+      const item = el('div', 'cap-row ' + (row.state || 'unavailable'));
+      item.appendChild(el('span', 'cap-dot'));
+      const body = el('div');
+      const name = el('div', 'cap-name', capabilityLabels[row.id] || row.id || '未命名能力');
+      const badge = el('span', 'cap-state', state);
+      name.appendChild(badge);
+      body.appendChild(name);
+      body.appendChild(el('div', 'cap-reason', row.reason || '未提供说明'));
+      item.appendChild(body);
+      list.appendChild(item);
+    });
+  }
+
   function renderStatusPage() {
     $('#st-phase').textContent = phaseLabel(status.phase);
     const dot = $('#st-dot');
@@ -1240,8 +1297,11 @@
     $('#st-addr').textContent = status.port ? '127.0.0.1:' + status.port : '—';
     $('#st-pid').textContent = status.pid ? String(status.pid) : '—';
     $('#st-payload').textContent = status.payloadId || '—';
+    $('#st-runtime-job').textContent = status.runtimeJobId || '—';
+    $('#st-runtime-state').textContent = status.runtimeJobState || '—';
     $('#st-app').textContent = status.appVersion || '—';
     $('#st-device').textContent = bridge ? bridge.deviceInfo() : navigator.userAgent;
+    renderCapabilities();
     const running = status.phase === 'running' || status.phase === 'starting' || status.phase === 'installing';
     $('#btn-start').disabled = running;
     $('#btn-stop').disabled = !running;
@@ -1251,6 +1311,71 @@
       const optimized = bridge.batteryOptimized();
       $('#battery-text').textContent = optimized ? '受系统限制，后台可能被暂停' : '已关闭，后台运行更稳定';
       $('#btn-battery').hidden = !optimized;
+    }
+  }
+
+  const JOB_LABELS = {
+    queued: '排队中', running: '运行中', paused: '已暂停', succeeded: '已完成',
+    failed: '失败', cancelled: '已取消',
+  };
+
+  async function refreshAgentJobs() {
+    const list = $('#agent-job-list');
+    const diagnostics = $('#agent-diagnostics');
+    if (!list || !diagnostics) return;
+    try {
+      const [jobsResponse, diagnosticsResponse] = await Promise.all([
+        fetch('/__android/jobs.json?profile=default', { cache: 'no-store' }),
+        fetch('/__android/job-diagnostics.json', { cache: 'no-store' }),
+      ]);
+      const data = await jobsResponse.json();
+      const diag = await diagnosticsResponse.json();
+      const app = diag.appVisible ? 'app 前台' : 'app 后台';
+      const n = (diag.workerAlive ? 'worker 在线' : 'worker 未启动') + '；' + app;
+      const heartbeat = diag.heartbeatAt ? ('，heartbeat ' + new Date(diag.heartbeatAt).toLocaleTimeString()) : '';
+      const notice = diag.notification || {};
+      const battery = notice.batteryOptimized ? '电池优化限制中' : '电池优化已关闭';
+      const channel = notice.jobChannelEnabled ? '任务通知频道可用' : '任务通知频道已关闭';
+      diagnostics.textContent = n + heartbeat + '；' + battery + '；' + channel;
+      list.innerHTML = '';
+      const jobs = data.jobs || [];
+      if (!jobs.length) {
+        list.appendChild(el('div', 'muted', '暂无后台任务'));
+        return;
+      }
+      jobs.forEach(job => {
+        const row = el('div', 'job-row');
+        row.dataset.jobId = job.jobId || '';
+        const title = el('div', 'job-title', (JOB_LABELS[job.state] || job.state) + ' · ' + String(job.jobId || '').slice(0, 8));
+        const meta = el('div', 'muted', job.lastError || (job.heartbeatAt ? '最近 heartbeat：' + new Date(job.heartbeatAt).toLocaleTimeString() : ''));
+        row.appendChild(title);
+        row.appendChild(meta);
+        const actions = el('div', 'buttons small');
+        if (job.state === 'paused' || job.state === 'failed') {
+          const resume = el('button', 'primary', '恢复');
+          resume.type = 'button';
+          resume.onclick = () => { if (bridge && bridge.resumeAgentJob(job.jobId)) refreshAgentJobs(); };
+          actions.appendChild(resume);
+        }
+        if (job.state === 'running') {
+          const pause = el('button', null, '暂停');
+          pause.type = 'button';
+          pause.onclick = () => { if (bridge && bridge.pauseAgentJob(job.jobId)) refreshAgentJobs(); };
+          actions.appendChild(pause);
+        }
+        if (!['succeeded', 'cancelled'].includes(job.state)) {
+          const cancel = el('button', 'danger', '取消');
+          cancel.type = 'button';
+          cancel.onclick = () => { if (bridge && bridge.cancelAgentJob(job.jobId)) refreshAgentJobs(); };
+          actions.appendChild(cancel);
+        }
+        row.appendChild(actions);
+        list.appendChild(row);
+      });
+    } catch (_) {
+      diagnostics.textContent = '任务诊断暂不可用';
+      list.innerHTML = '';
+      list.appendChild(el('div', 'muted', '无法读取后台任务状态'));
     }
   }
 
@@ -1310,6 +1435,7 @@
     if (name === 'status') {
       renderStatusPage();
       refreshLog();
+      refreshAgentJobs();
       logTimer = setInterval(refreshLog, 2000);
     }
   }
@@ -1329,6 +1455,7 @@
   $('#opt-awake').onchange = ev => bridge && bridge.setKeepAwake(ev.target.checked);
   $('#opt-autostart').onchange = ev => bridge && bridge.setAutoStart(ev.target.checked);
   $('#btn-log-refresh').onclick = refreshLog;
+  $('#agent-jobs-refresh').onclick = refreshAgentJobs;
   $('#boot-logs').onclick = () => showView('status');
   $('#btn-log-copy').onclick = () => copy($('#log').textContent);
 
@@ -1344,6 +1471,15 @@
     }
     if (currentView !== 'chat') { showView('chat'); return true; }
     return false;
+  };
+
+  window.hermesAgentJob = function (jobId) {
+    showView('status');
+    refreshAgentJobs().then(() => {
+      const row = Array.from(document.querySelectorAll('.job-row'))
+        .find(item => item.dataset.jobId === String(jobId || ''));
+      if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
   };
 
   window.hermesShared = function () {

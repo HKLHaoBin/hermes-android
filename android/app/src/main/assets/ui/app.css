@@ -275,6 +275,21 @@ body.typing #tabs { display: none; }
 .kv dd { margin: 0; word-break: break-all; color: var(--text-2); }
 .buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .buttons.small button { padding: 5px 12px; font-size: 13px; }
+.job-list { margin-top: 10px; display: grid; gap: 10px; }
+.job-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px; display: grid; gap: 6px; }
+.job-title { font-weight: 600; color: var(--text-2); }
+.job-row .buttons { margin-top: 2px; }
+.cap-title { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.cap-hint { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px; }
+.capabilities { display: grid; gap: 8px; margin-top: 14px; }
+.cap-row { display: grid; grid-template-columns: 10px minmax(0, 1fr); gap: 9px; align-items: start; padding: 9px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.cap-row .cap-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: var(--muted); }
+.cap-row.supported .cap-dot { background: var(--ok); }
+.cap-row.partial .cap-dot, .cap-row.experimental .cap-dot { background: #c6852c; }
+.cap-row.unavailable .cap-dot { background: var(--muted); }
+.cap-name { font-size: 13px; font-weight: 650; color: var(--text-2); }
+.cap-state { float: right; font-size: 11px; color: var(--muted); font-weight: 500; }
+.cap-reason { color: var(--muted); font-size: 12px; line-height: 1.4; margin-top: 2px; }
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
 .switch-row:last-child { border-bottom: 0; padding-bottom: 2px; }
 .switch-row small { display: block; color: var(--muted); font-size: 12px; margin-top: 1px; }

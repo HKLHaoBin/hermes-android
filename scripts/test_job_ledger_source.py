@@ -21,6 +21,7 @@ class JobLedgerSourceTests(unittest.TestCase):
             'created_at INTEGER NOT NULL', 'updated_at INTEGER NOT NULL',
             'started_at INTEGER', 'finished_at INTEGER', 'retry_count INTEGER NOT NULL',
             'last_error TEXT', 'runtime_id TEXT', 'session_id TEXT', 'notification_id TEXT',
+            'worker_id TEXT', 'heartbeat_at INTEGER',
         ):
             with self.subTest(column=column):
                 self.assertIn(column, self.source)
@@ -30,6 +31,10 @@ class JobLedgerSourceTests(unittest.TestCase):
         self.assertGreaterEqual(self.source.count('db.beginTransaction()'), 3)
         self.assertGreaterEqual(self.source.count('updated_at = ?'), 3)
         self.assertIn('private fun findVersion(', self.source)
+        self.assertIn('fun heartbeat(', self.source)
+        self.assertIn('fun setRuntimeId(', self.source)
+        self.assertIn('CREATE TABLE IF NOT EXISTS job_schedules', self.source)
+        self.assertIn('fun advanceSchedule(', self.source)
 
     def test_transition_requires_caller_revision_token(self):
         start = self.source.index('fun transition(')

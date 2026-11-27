@@ -70,13 +70,17 @@
         <div class="card">
           <div class="card-head"><div><div class="label">本机运行时</div><div id="st-phase" class="big">—</div></div><span id="st-dot" class="dot big-dot"></span></div>
           <div id="st-message" class="muted"></div><div id="st-progress" class="progress" hidden><div></div></div>
-          <dl class="kv"><dt>地址</dt><dd id="st-addr">—</dd><dt>进程</dt><dd id="st-pid">—</dd><dt>运行时版本</dt><dd id="st-payload">—</dd><dt>App 版本</dt><dd id="st-app">—</dd><dt>设备</dt><dd id="st-device">—</dd></dl>
+          <dl class="kv"><dt>地址</dt><dd id="st-addr">—</dd><dt>进程</dt><dd id="st-pid">—</dd><dt>运行时版本</dt><dd id="st-payload">—</dd><dt>Runtime job</dt><dd id="st-runtime-job">—</dd><dt>Runtime 状态</dt><dd id="st-runtime-state">—</dd><dt>App 版本</dt><dd id="st-app">—</dd><dt>设备</dt><dd id="st-device">—</dd></dl>
           <div class="buttons"><button type="button" id="btn-start" class="primary">启动</button><button type="button" id="btn-restart">重启</button><button type="button" id="btn-stop" class="danger">停止</button></div>
         </div>
+
+        <div class="card" id="capability-card"><div class="card-head"><div><div class="label">Android 能力范围</div><div id="capability-summary" class="cap-title">—</div></div><div id="capability-hint" class="cap-hint">—</div></div><div id="capabilities" class="capabilities"><div class="muted">正在读取能力声明…</div></div></div>
 
         <div class="card"><div class="label">外观</div><div class="themes" id="themes"><button type="button" class="theme-opt" data-theme="sage"><span class="sw"><i style="background:#f5f4ef"></i><i style="background:#e2eeea"></i><i style="background:#2e6e64"></i></span>雾松青</button><button type="button" class="theme-opt" data-theme="clay"><span class="sw"><i style="background:#f7f3ee"></i><i style="background:#f5e6dd"></i><i style="background:#a85a36"></i></span>陶土</button><button type="button" class="theme-opt" data-theme="lavender"><span class="sw"><i style="background:#f6f5fa"></i><i style="background:#ece9fb"></i><i style="background:#6250cc"></i></span>雾紫</button></div></div>
 
         <div class="card"><div class="label">后台运行</div><label class="switch-row"><span>运行时保持 CPU 唤醒<small>长任务、定时任务不被系统休眠打断</small></span><input type="checkbox" id="opt-awake"></label><label class="switch-row"><span>打开 App 时自动启动<small>关闭后需要在此页手动启动</small></span><input type="checkbox" id="opt-autostart"></label><div class="switch-row" id="battery-row"><span>电池优化<small id="battery-text">—</small></span><button type="button" id="btn-battery">设置</button></div></div>
+
+        <div class="card" data-kind="agentJobs"><div class="card-head"><div><div class="label">后台 Agent 任务</div><div id="agent-diagnostics" class="muted">正在读取任务状态…</div></div><button type="button" id="agent-jobs-refresh">刷新</button></div><div id="agent-job-list" class="job-list"><div class="muted">暂无后台任务</div></div></div>
 
         <div class="card"><div class="card-head"><div class="label">日志</div><div class="buttons small"><button type="button" id="btn-log-copy">复制</button><button type="button" id="btn-log-refresh">刷新</button></div></div><pre id="log"></pre></div>
         <p class="footnote">基于 NousResearch/hermes-agent（MIT）。AI 模型可在本页直接进入 OAuth、模型选择或 API Key 配置。</p>

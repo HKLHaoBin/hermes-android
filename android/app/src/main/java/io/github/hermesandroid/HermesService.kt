@@ -34,12 +34,26 @@ class HermesService : Service() {
     @Volatile private var stopping = false
     private var wakeLock: PowerManager.WakeLock? = null
     private val crashTimes = java.util.concurrent.CopyOnWriteArrayList<Long>()
+    private val runtimeJobs by lazy { RuntimeJobLedger(applicationContext) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, notification())
         when (intent?.action) {
+            ACTION_START, ACTION_RUN_JOBS -> launch()
+            ACTION_RESUME_JOB -> {
+                intent.getStringExtra(EXTRA_JOB_ID)?.let { AgentJobCoordinator.resumeJob(it) }
+                launch()
+            }
+            ACTION_PAUSE_JOB -> {
+                intent.getStringExtra(EXTRA_JOB_ID)?.let { AgentJobCoordinator.pauseJob(it) }
+                launch()
+            }
+            ACTION_CANCEL_JOB -> {
+                intent.getStringExtra(EXTRA_JOB_ID)?.let { AgentJobCoordinator.cancelJob(it) }
+                launch()
+            }
             ACTION_STOP -> {
                 thread(name = "hermes-stop") {
                     stopRuntime()
@@ -61,6 +75,8 @@ class HermesService : Service() {
 
     override fun onDestroy() {
         HermesRuntime.removeListener(notifier)
+        AgentJobCoordinator.onServiceDestroyed()
+        runtimeJobs.cancel()
         thread(name = "hermes-destroy") { stopRuntime() }
         releaseWakeLock()
         super.onDestroy()
@@ -70,6 +86,9 @@ class HermesService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        AgentJobCoordinator.initialize(this)
+        AgentJobCoordinator.recoverAfterProcessDeath(this)
+        runtimeJobs.recover()
         HermesRuntime.addListener(notifier)
     }
 
@@ -83,13 +102,18 @@ class HermesService : Service() {
     private fun runRuntime() {
         val installer = PayloadInstaller(this)
         var readyFile: File? = null
+        val createdRuntimeJob = runtimeJobs.begin()
+        publishRuntimeJob(createdRuntimeJob)
         try {
             if (!installer.hasPayload()) {
+                runtimeJobs.cancel()
+                publishRuntimeJob(runtimeJobs.current())
                 fail("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
                 return
             }
             val manifest = installer.manifest()
             val payloadId = manifest.getString("payload_id")
+            runtimeJobs.attachRuntimeId(payloadId)?.let(::publishRuntimeJob)
             HermesRuntime.update { it.copy(payloadId = payloadId, exitCode = null) }
 
             val swept = ProcUtil.sweep(installer.root.absolutePath)
@@ -108,7 +132,11 @@ class HermesService : Service() {
                 }
                 log("运行环境已安装：$payloadId")
             }
-            if (stopping) return
+            if (stopping) {
+                runtimeJobs.cancel()
+                publishRuntimeJob(runtimeJobs.current())
+                return
+            }
 
             try {
                 RuntimeEnv.installConsoleThemes(this)
@@ -118,7 +146,7 @@ class HermesService : Service() {
             val port = choosePort(Prefs.port(this))
             val token = newToken()
             HermesRuntime.update {
-                it.copy(phase = HermesRuntime.Phase.STARTING, progress = -1f, port = port, token = "", webCookie = "",
+                it.copy(phase = HermesRuntime.Phase.STARTING, progress = -1f, port = port, token = token, webCookie = "",
                     message = "正在启动 Hermes…", startedAt = System.currentTimeMillis())
             }
             acquireWakeLock()
@@ -149,6 +177,8 @@ class HermesService : Service() {
                 val cookie = ready.readText()
                 ready.delete()
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
+                runtimeJobs.markRunning()?.let(::publishRuntimeJob)
+                AgentJobCoordinator.onRuntimeReady(HermesRuntime.snapshot)
                 log("Hermes 已就绪：http://127.0.0.1:$port")
             } else if (!stopping && proc.isAliveCompat()) {
                 proc.destroy()
@@ -157,10 +187,14 @@ class HermesService : Service() {
             pump.join(2000)
             process = null
             if (stopping) {
+                AgentJobCoordinator.onRuntimeUnavailable()
+                runtimeJobs.cancel()?.let(::publishRuntimeJob)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", exitCode = code, pid = 0) }
             } else {
                 val killed = code == 137 || code == 9
                 val hint = if (killed) "，可能被系统的后台限制结束" else ""
+                AgentJobCoordinator.onRuntimeUnavailable()
+                runtimeJobs.markFailed("Hermes 进程意外退出（代码 $code$hint）")?.let(::publishRuntimeJob)
                 val now = System.currentTimeMillis()
                 crashTimes.removeIf { now - it > 10 * 60 * 1000L }
                 crashTimes.add(now)
@@ -188,7 +222,16 @@ class HermesService : Service() {
         }
     }
 
+    private fun publishRuntimeJob(record: JobRecord?) {
+        if (record == null) return
+        HermesRuntime.update {
+            it.copy(runtimeJobId = record.jobId, runtimeJobState = record.state.value)
+        }
+    }
+
     private fun fail(message: String, code: Int? = null) {
+        AgentJobCoordinator.onRuntimeUnavailable()
+        runtimeJobs.markFailed(message)?.let(::publishRuntimeJob)
         HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.ERROR, message = message, exitCode = code, pid = 0, progress = -1f) }
     }
 
@@ -234,6 +277,8 @@ class HermesService : Service() {
 
     private fun stopRuntime() {
         stopping = true
+        AgentJobCoordinator.onRuntimeUnavailable()
+        runtimeJobs.cancel()?.let(::publishRuntimeJob)
         val proc = process
         if (proc != null || pid > 0) {
             HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
@@ -309,7 +354,8 @@ class HermesService : Service() {
         val (title, text) = when (s.phase) {
             HermesRuntime.Phase.INSTALLING -> getString(R.string.notif_installing) to
                 (if (s.progress >= 0) "${(s.progress * 100).toInt()}%" else "")
-            HermesRuntime.Phase.RUNNING -> getString(R.string.notif_running) to getString(R.string.notif_running_text)
+            HermesRuntime.Phase.RUNNING -> getString(R.string.notif_running) to
+                (getString(R.string.notif_running_text) + " · runtime " + s.runtimeJobId.take(8))
             HermesRuntime.Phase.ERROR -> getString(R.string.notif_error) to s.message
             else -> getString(R.string.notif_starting) to s.message
         }
@@ -364,6 +410,12 @@ class HermesService : Service() {
         const val ACTION_START = "io.github.hermesandroid.START"
         const val ACTION_STOP = "io.github.hermesandroid.STOP"
         const val ACTION_RESTART = "io.github.hermesandroid.RESTART"
+        const val ACTION_RUN_JOBS = "io.github.hermesandroid.RUN_JOBS"
+        const val ACTION_RESUME_JOB = "io.github.hermesandroid.RESUME_JOB"
+        const val ACTION_PAUSE_JOB = "io.github.hermesandroid.PAUSE_JOB"
+        const val ACTION_CANCEL_JOB = "io.github.hermesandroid.CANCEL_JOB"
+        const val EXTRA_JOB_ID = "agent_job_id"
+        private const val RUNTIME_PROFILE = "android-runtime"
         private const val NOTIFICATION_ID = 42
         private const val MAX_AUTO_RESTARTS = 3
 
