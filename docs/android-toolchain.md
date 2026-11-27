@@ -31,6 +31,7 @@ The payload-side `android_toolchain.py` supports `inventory`, `preflight`, `inst
 
 - `preflight` rejects wrong ABI, API, libc, missing dependency, failed app-private execution/writable-root checks, or insufficient peak space before extraction.
 - `install` and `update` verify the archive size and SHA-256 from the locked catalog before extraction. Archives are extracted into a transaction directory, checked for path traversal, absolute/escaping symlinks, unsupported hardlinks/device entries, and declared executable entrypoints, then activated by an atomic selection commit.
+- During activation, Termux absolute shebangs and symlink targets are rewritten to Android/system or entry-local paths, and known ELF Termux library search strings are rewritten to `$ORIGIN`-relative paths. Runtime and terminal children also receive the approved active-state PATH/LD_LIBRARY_PATH exports.
 - The cross-process transaction owner records a nonce and process start identity; stale locks are reclaimed only when the recorded process identity is no longer live, and release verifies ownership before deleting the lock.
 - The manager never executes archive contents during installation.
 - `update` keeps the old active entry as the previous selection. Reinstalling a version never deletes a path referenced by active or previous state.
@@ -64,4 +65,4 @@ This change does not add CLI/TUI parity, skills/MCP lifecycle, browser automatio
 
 Build and verification
 
-GitHub Actions remains the build boundary. The workflow runs the pure transaction/catalog contracts, regenerates the locked catalog, stages it with the payload, and exercises catalog inventory in both `LD_LIBRARY_PATH` and RUNPATH-only container passes. APK signing and artifact verification remain unchanged.
+- GitHub Actions remains the build boundary. The workflow runs the pure transaction/catalog contracts, regenerates the locked catalog, stages it with the payload, and exercises catalog inventory in two approved terminal-environment container passes. APK signing and artifact verification remain unchanged.

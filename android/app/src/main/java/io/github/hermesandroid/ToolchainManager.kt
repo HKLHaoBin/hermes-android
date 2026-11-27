@@ -50,9 +50,13 @@ object ToolchainManager {
         }
         return try {
             val catalog = JSONObject(catalogFile.readText(Charsets.UTF_8))
-            val state = readState(File(root(context), "state.json"))
-                ?: throw IOException("state.json is missing or malformed")
-            if (!validState(state)) throw IOException("state.json schema or selections are invalid")
+            val stateFile = File(root(context), "state.json")
+            val state = if (!stateFile.exists()) {
+                emptyState(catalog)
+            } else {
+                readState(stateFile) ?: throw IOException("state.json is malformed")
+            }
+            if (!validState(state, catalog)) throw IOException("state.json schema, identity, or selections are invalid")
             val active = state.getJSONObject("active")
             val previous = state.getJSONObject("previous")
             val packages = JSONArray()
@@ -119,14 +123,16 @@ object ToolchainManager {
 
     fun pathEntries(context: Context, field: String): List<String> {
         val catalogFile = ensureCatalog(context) ?: return emptyList()
-        val state = readState(File(root(context), "state.json")) ?: return emptyList()
-        if (!validState(state)) return emptyList()
-        val active = state.getJSONObject("active")
         val catalog = try {
             JSONObject(catalogFile.readText(Charsets.UTF_8))
         } catch (_: Exception) {
             return emptyList()
         }
+        val stateFile = File(root(context), "state.json")
+        if (!stateFile.exists()) return emptyList()
+        val state = readState(stateFile) ?: return emptyList()
+        if (!validState(state, catalog)) return emptyList()
+        val active = state.getJSONObject("active")
         val records = catalog.optJSONArray("packages") ?: return emptyList()
         val output = ArrayList<String>()
         val names = active.keys()
@@ -290,8 +296,16 @@ object ToolchainManager {
         null
     }
 
-    private fun validState(state: JSONObject): Boolean =
+    private fun emptyState(catalog: JSONObject): JSONObject = JSONObject().apply {
+        put("schema_version", SCHEMA_VERSION)
+        put("catalog_id", catalog.optString("catalog_id"))
+        put("active", JSONObject())
+        put("previous", JSONObject())
+    }
+
+    private fun validState(state: JSONObject, catalog: JSONObject): Boolean =
         state.optInt("schema_version", 0) == SCHEMA_VERSION &&
+            state.optString("catalog_id") == catalog.optString("catalog_id") &&
             state.optJSONObject("active") != null &&
             state.optJSONObject("previous") != null
 

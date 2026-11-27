@@ -15,6 +15,7 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         cls.asset_server = (KOTLIN / "AssetServer.kt").read_text(encoding="utf-8")
         cls.runtime_env = (KOTLIN / "RuntimeEnv.kt").read_text(encoding="utf-8")
         cls.relocator = (ROOT / "scripts/relocate_payload.py").read_text(encoding="utf-8")
+        cls.terminal_stage = (ROOT / "scripts/stage_android_terminal.py").read_text(encoding="utf-8")
         cls.smoke_env = (ROOT / "scripts/smoke_env.py").read_text(encoding="utf-8")
         cls.smoke = (ROOT / "scripts/smoke.sh").read_text(encoding="utf-8")
         cls.workflow = (ROOT / ".github/workflows/build-apk.yml").read_text(encoding="utf-8")
@@ -88,6 +89,18 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn("ToolchainManager.pathEntries", self.runtime_env)
         self.assertIn("HERMES_ANDROID_TOOLCHAIN_ROOT", self.runtime_env)
         self.assertIn("HERMES_ANDROID_TOOLCHAIN_CATALOG", self.runtime_env)
+        self.assertIn('"LD_LIBRARY_PATH"', self.runtime_env)
+
+    def test_terminal_staging_preserves_approved_toolchain_environment(self):
+        for key in ("PATH", "LD_LIBRARY_PATH", "HERMES_ANDROID_TOOLCHAIN_ROOT", "HERMES_ANDROID_TOOLCHAIN_CATALOG", "HERMES_ANDROID_TOOLCHAIN_SCRIPT"):
+            self.assertIn(f'"{key}"', self.terminal_stage)
+
+    def test_package_relocation_rewrites_runtime_paths(self):
+        manager = (ROOT / "scripts/android_toolchain.py").read_text(encoding="utf-8")
+        self.assertIn("_relocate_shebang", manager)
+        self.assertIn("_relocate_symlink", manager)
+        self.assertIn("_relocate_elf_runpath", manager)
+        self.assertIn("TERMUX_PREFIX", manager)
 
     def test_native_inventory_validates_authoritative_selection(self):
         manager = (KOTLIN / "ToolchainManager.kt").read_text(encoding="utf-8")
@@ -101,6 +114,9 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn('status.state != "active"', manager)
         self.assertIn("readState", manager)
         self.assertIn("validState", manager)
+        self.assertIn("emptyState", manager)
+        self.assertIn("stateFile.exists()", manager)
+        self.assertIn('state.optString("catalog_id")', manager)
         self.assertIn("canonicalPath", manager)
         self.assertIn("File.separator", manager)
         self.assertNotIn("toPath()", manager)
@@ -122,6 +138,8 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn("check_tool_path", self.smoke)
         for probe in ("path-git", "path-curl", "path-wget", "path-tar", "path-unzip", "path-coreutils", "path-findutils"):
             self.assertIn(probe, self.smoke)
+        self.assertIn("for mode in ld-path terminal-env", self.smoke)
+        self.assertNotIn("runpath-only", self.smoke)
         self.assertIn("env --shell", self.smoke)
 
     def test_smoke_environment_refreshes_from_installed_toolchain_state(self):

@@ -2,8 +2,9 @@
 # Runs inside the Android (termux-docker) container with most of the Termux prefix
 # hidden, so only what the app ships and what Android provides is available.
 # (The container's own toybox needs Termux libs, so only shell builtins are used here.)
-# Pass 1 uses LD_LIBRARY_PATH like the app on arm64 phones; pass 2 relies on the
-# $ORIGIN RUNPATHs alone (what x86 devices with ARM translation get).
+# Both passes use the approved child environment exported by RuntimeEnv.kt. The
+# second pass changes the port and process lifecycle without pretending that an
+# unsupported no-LD-library-path environment is a real app launch mode.
 S=/data/data/com.termux/files/home/sim
 R=$S/files/hermes-agent
 RC=0
@@ -13,8 +14,9 @@ export HERMES_ANDROID_TOOLCHAIN_ROOT
 first() { read -r line; echo "$1 -> $line"; while read -r _; do :; done; }
 dump() { while IFS= read -r line; do echo "$line"; done < "$1"; }
 PORT=9119
-for mode in ld-path runpath-only; do
-  if [ "$mode" = runpath-only ]; then export NO_LD_LIBRARY_PATH=1; PORT=9120; fi
+unset NO_LD_LIBRARY_PATH
+for mode in ld-path terminal-env; do
+  if [ "$mode" = terminal-env ]; then PORT=9120; fi
   export SMOKE_PORT=$PORT
   echo "===== pass: $mode"
   if ! "$S/files/run.sh" --py "$S/smoke_runtime_fixes.py" "$R"; then

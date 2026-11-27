@@ -2,10 +2,12 @@
 
 import base64
 import hashlib
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 from urllib.request import urlopen
+
+from stage_android_import import stage_import
 
 root = Path(sys.argv[1])
 index = root / 'static/index.html'
@@ -57,8 +59,6 @@ anchor = '        env = {k: v for k, v in os.environ.items() if k in _SAFE_ENV_K
 if source.count(anchor) != 1:
     raise SystemExit('Embedded terminal environment contract changed')
 source = source.replace(anchor, '        # Bundle paths only; do not inherit server passwords or provider keys.\n'
-    '        _SAFE_ENV_KEYS.update({"HERMES_HOME", "PREFIX", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"})\n' + anchor)
+    '        _SAFE_ENV_KEYS.update({"HERMES_HOME", "PREFIX", "PATH", "LD_LIBRARY_PATH", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "HERMES_ANDROID_TOOLCHAIN_ROOT", "HERMES_ANDROID_TOOLCHAIN_CATALOG", "HERMES_ANDROID_TOOLCHAIN_SCRIPT"})\n' + anchor)
 terminal.write_text(source, encoding='utf-8')
-
-from stage_android_import import stage_import
 stage_import(root)

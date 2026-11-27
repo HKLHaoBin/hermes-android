@@ -36,6 +36,7 @@ TARGET_TRIPLE = "linux-arm64-bionic"
 TARGET_ABI = "arm64-v8a"
 TARGET_LIBC = "bionic"
 TARGET_MIN_SDK = 24
+TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _HEX40 = re.compile(r"^[0-9A-Fa-f]{40}$")
 _NAME = re.compile(r"^[a-z0-9][a-z0-9+._-]*$")
@@ -899,6 +900,81 @@ class ToolchainStore:
             shutil.move(str(item), destination / item.name)
         normalized.rmdir()
 
+    def _relocate_shebang(self, path: Path) -> bool:
+        data = path.read_bytes()
+        if not data.startswith(b"#!"):
+            return False
+        newline = data.find(b"\n")
+        if newline < 0:
+            newline = len(data)
+        line = data[:newline]
+        if TERMUX_PREFIX.encode() not in line:
+            return False
+        body = line[2:].strip()
+        env_prefix = TERMUX_PREFIX.encode() + b"/bin/env"
+        bin_prefix = TERMUX_PREFIX.encode() + b"/bin/"
+        if body.startswith(env_prefix):
+            replacement = b"#!/system/bin/env" + body[len(env_prefix):]
+        elif body.startswith(bin_prefix):
+            command = body[len(bin_prefix):].split(None, 1)
+            if not command or not command[0]:
+                raise TransactionError(f"invalid Termux shebang: {path}")
+            replacement = b"#!/system/bin/env " + command[0]
+            if len(command) > 1:
+                replacement += b" " + command[1]
+        else:
+            raise TransactionError(f"unsupported absolute Termux shebang: {path}")
+        path.write_bytes(replacement + data[newline:])
+        return True
+
+    def _relocate_symlink(self, path: Path, root: Path) -> bool:
+        target = os.readlink(path)
+        if not target.startswith(TERMUX_PREFIX):
+            return False
+        relative = target[len(TERMUX_PREFIX):].lstrip("/")
+        if relative in {"bin/sh", "bin/env"}:
+            new_target = f"/system/{relative}"
+        else:
+            resolved = self._safe_path(root, relative)
+            if not resolved.exists():
+                raise TransactionError(f"unresolved absolute Termux symlink: {path}")
+            new_target = os.path.relpath(resolved, path.parent).replace(os.sep, "/")
+        path.unlink()
+        path.symlink_to(new_target)
+        return True
+
+    def _relocate_elf_runpath(self, path: Path) -> bool:
+        data = path.read_bytes()
+        if not data.startswith(b"\x7fELF"):
+            return False
+        replacement = b"$ORIGIN" if path.parent.name in {"lib", "lib64"} else b"$ORIGIN/../lib"
+        changed = False
+        for old in (
+            f"{TERMUX_PREFIX}/lib64".encode(),
+            f"{TERMUX_PREFIX}/lib".encode(),
+        ):
+            if old not in data or len(replacement) > len(old):
+                continue
+            padded = replacement + (b"\0" * (len(old) - len(replacement)))
+            data = data.replace(old, padded)
+            changed = True
+        if changed:
+            path.write_bytes(data)
+        return changed
+
+    def _relocate_entry(self, entry: Path) -> None:
+        """Make extracted Termux scripts, links, and ELF loaders app-private."""
+        for dirpath, dirnames, filenames in os.walk(entry, followlinks=False):
+            current = Path(dirpath)
+            for name in list(dirnames) + list(filenames):
+                path = current / name
+                if path.is_symlink():
+                    self._relocate_symlink(path, entry)
+                    continue
+                if path.is_file():
+                    self._relocate_shebang(path)
+                    self._relocate_elf_runpath(path)
+
     def _validate_entry(self, spec: PackageSpec, entry: Path) -> None:
         for relative in spec.entrypoints:
             path = self._safe_path(entry, relative)
@@ -982,6 +1058,7 @@ class ToolchainStore:
                         self._download_artifact(spec, source)
                     self._verify_artifact(spec, source)
                     self._extract(source, stage)
+                    self._relocate_entry(stage)
                     self._validate_entry(spec, stage)
                     self._write_manifest(spec, stage)
                     entry.parent.mkdir(parents=True, exist_ok=True)

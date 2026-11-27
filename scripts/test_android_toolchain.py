@@ -677,6 +677,33 @@ class AndroidToolchainTests(unittest.TestCase):
         self.assertFalse((self.root / "outside").exists())
         self.assertIsNotNone(spec)
 
+    def test_package_relocation_rewrites_shebang_symlink_and_elf_runpath(self):
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        entry = self.root / "entry"
+        (entry / "bin").mkdir(parents=True)
+        (entry / "lib").mkdir()
+        script = entry / "bin/npm"
+        script.write_bytes(b"#!/data/data/com.termux/files/usr/bin/env node\nconsole.log(1)\n")
+        elf = entry / "bin/node"
+        elf.write_bytes(b"\x7fELF" + b"/data/data/com.termux/files/usr/lib\0" + b"payload")
+        symlink = entry / "bin/env-link"
+        try:
+            symlink.symlink_to("/data/data/com.termux/files/usr/bin/env")
+        except OSError as exc:
+            self.skipTest(f"symlink test unavailable: {exc}")
+        store._relocate_entry(entry)
+        self.assertTrue(script.read_bytes().startswith(b"#!/system/bin/env node\n"))
+        relocated_elf = elf.read_bytes()
+        self.assertNotIn(b"/data/data/com.termux/files/usr/lib", relocated_elf)
+        self.assertIn(b"$ORIGIN/../lib", relocated_elf)
+        self.assertEqual(os.readlink(symlink), "/system/bin/env")
+
     def test_tar_symlink_must_resolve_inside_staging_root(self):
         _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
         _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
