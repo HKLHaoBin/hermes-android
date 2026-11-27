@@ -58,8 +58,14 @@ jobs:
       - name: Job ledger source contract regressions
         run: python3 scripts/test_job_ledger_source.py
 
+      - name: Capability declaration regressions
+        run: python3 scripts/test_capabilities.py
+
       - name: Issue #10 scheduler contract regressions
         run: python3 scripts/test_issue10_scheduler.py
+
+      - name: Integration preparation contract regressions
+        run: python3 scripts/test_integration_prep.py
 
       - uses: gradle/actions/setup-gradle@v5
         with:

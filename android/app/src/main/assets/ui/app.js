@@ -1243,6 +1243,49 @@
     }
   }
 
+  const capabilityStates = {
+    supported: '支持', partial: '部分支持', experimental: '实验性', unavailable: '不可用',
+  };
+  const capabilityLabels = {
+    webui: 'WebUI', runtime: 'Android runtime', cli_tui: 'CLI / TUI', terminal: '终端',
+    skills: 'Skills', plugins: 'Plugins', mcp: 'MCP', browser: '浏览器后端',
+    computer_use: 'Computer use', background_service: '后台服务', job_queue: '持久任务队列',
+    backup_restore: '备份与恢复', real_device_validation: '真机验收',
+  };
+
+  function renderCapabilities() {
+    const list = $('#capabilities');
+    if (!list) return;
+    const declared = status.capabilities || [];
+    const capabilities = Array.isArray(declared) ? declared : [];
+    const available = capabilities.filter(row => row.state === 'supported' || row.state === 'partial').length;
+    $('#capability-summary').textContent = capabilities.length
+      ? `${available}/${capabilities.length} 项可用或部分可用`
+      : '能力声明暂不可用';
+    $('#capability-hint').textContent = [
+      status.androidApi ? 'API ' + status.androidApi : '',
+      status.abi || '',
+    ].filter(Boolean).join(' · ') || '等待 runtime';
+    list.innerHTML = '';
+    if (!capabilities.length) {
+      list.appendChild(el('div', 'muted', 'runtime 尚未返回能力声明'));
+      return;
+    }
+    capabilities.forEach(row => {
+      const state = capabilityStates[row.state] || row.state || '未知';
+      const item = el('div', 'cap-row ' + (row.state || 'unavailable'));
+      item.appendChild(el('span', 'cap-dot'));
+      const body = el('div');
+      const name = el('div', 'cap-name', capabilityLabels[row.id] || row.id || '未命名能力');
+      const badge = el('span', 'cap-state', state);
+      name.appendChild(badge);
+      body.appendChild(name);
+      body.appendChild(el('div', 'cap-reason', row.reason || '未提供说明'));
+      item.appendChild(body);
+      list.appendChild(item);
+    });
+  }
+
   function renderStatusPage() {
     $('#st-phase').textContent = phaseLabel(status.phase);
     const dot = $('#st-dot');
@@ -1258,6 +1301,7 @@
     $('#st-runtime-state').textContent = status.runtimeJobState || '—';
     $('#st-app').textContent = status.appVersion || '—';
     $('#st-device').textContent = bridge ? bridge.deviceInfo() : navigator.userAgent;
+    renderCapabilities();
     const running = status.phase === 'running' || status.phase === 'starting' || status.phase === 'installing';
     $('#btn-start').disabled = running;
     $('#btn-stop').disabled = !running;
