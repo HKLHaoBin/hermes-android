@@ -68,6 +68,10 @@ class SecurityRepairContracts(unittest.TestCase):
         self.assertLess(stop.index("if (generation != activeTeardownGeneration) return"), stop.index("ProcUtil.stopTree"))
         self.assertNotIn("stopSelf()", self.service)
         self.assertIn("worker?.join()", stop)
+        self.assertIn("ProcessOwner", self.service)
+        self.assertIn("ownerIsCurrentLocked", self.service)
+        self.assertIn("proc?.isAliveCompat() == true", stop)
+        self.assertNotIn("if (target > 0) ProcUtil.stopTree", stop)
         auto = method(self.service, "scheduleAutoRestart")
         self.assertIn("failedWorker.join()", auto)
         self.assertIn("autoRestartOwnerGeneration", auto)
@@ -94,6 +98,7 @@ class SecurityRepairContracts(unittest.TestCase):
         self.assertIn("MODE_MASK", self.installer)
         self.assertIn("EXECUTE_BITS", self.installer)
         self.assertIn("entry.mode.toString(8)", self.installer)
+        self.assertIn("out += ContentEntry(relative, 'D', current, mode = mode)", self.installer)
         self.assertIn("hasExecuteBit", self.installer)
         self.assertIn("validateSymlinkTarget", self.installer)
         self.assertIn('arrayOf("python", "repo", "site")', self.installer)
@@ -139,6 +144,10 @@ class SecurityRepairContracts(unittest.TestCase):
         self.assertIn("activateExisting(payloadId, current, manifest", install)
         self.assertIn("refusing to activate unverified candidate", activate)
         self.assertIn("refusing to retain unverified active slot", activate)
+        prune = method(self.installer, "pruneSlots")
+        self.assertIn("val validActive", prune)
+        self.assertIn("val validPrevious", prune)
+        self.assertIn("quiescence callback required", prune)
 
 
 if __name__ == "__main__":

@@ -30,10 +30,12 @@ import kotlin.concurrent.thread
 class HermesService : Service() {
 
     private enum class Command { START, AUTO_RESTART, STOP, RESTART, DESTROY }
+    private data class ProcessOwner(val process: java.lang.Process, val pid: Int, val root: String, val generation: Long)
 
     private val lifecycleLock = Any()
     private var worker: Thread? = null
     @Volatile private var process: java.lang.Process? = null
+    @Volatile private var processOwner: ProcessOwner? = null
     @Volatile private var pid: Int = 0
     @Volatile private var stopping = false
     private var commandGeneration = 0L
@@ -256,7 +258,7 @@ class HermesService : Service() {
 
             quiescePayload(installer.root.absolutePath)
             requireGeneration(generation)
-            installer.pruneStaleSlots()
+            installer.pruneStaleSlots(::quiescePayload)
 
             requireGeneration(generation)
             val needsInstall = installer.needsInstall(manifest)
@@ -338,6 +340,7 @@ class HermesService : Service() {
                     throw PayloadInstaller.InstallCancelledException()
                 }
                 pid = childPid
+                processOwner = ProcessOwner(proc, childPid, attemptedRoot ?: installer.root.absolutePath, generation)
             }
             HermesRuntime.update { it.copy(pid = pid) }
             pump = thread(name = "hermes-log") { pumpLog(proc) }
@@ -356,7 +359,7 @@ class HermesService : Service() {
                 throw IOException("运行环境未通过启动健康检查")
             }
             val code = proc.waitFor()
-            stopOwnedProcess(attemptedRoot)
+            stopOwnedProcess(attemptedRoot, generation)
             pump?.join(2000)
             if (!isGenerationCurrent(generation)) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", exitCode = code, pid = 0) }
@@ -378,7 +381,7 @@ class HermesService : Service() {
         } catch (t: Throwable) {
             log("错误：${t}")
             try {
-                stopOwnedProcess(attemptedRoot)
+                stopOwnedProcess(attemptedRoot, generation)
                 pump?.join(2000)
                 val cancelled = !isGenerationCurrent(generation) || t is PayloadInstaller.InstallCancelledException
                 if (cancelled) {
@@ -454,12 +457,25 @@ class HermesService : Service() {
     }
 
     /** Stop the process before changing the slot it was executing from. */
-    private fun stopOwnedProcess(root: String?) {
-        val proc = process
-        val target = pid
+    private fun stopOwnedProcess(root: String?, generation: Long?) {
+        val proc: java.lang.Process?
+        val target: Int
+        val canStopTree: Boolean
+        synchronized(lifecycleLock) {
+            val owner = processOwner
+            val current = process
+            val ownerMatches = owner != null && current === owner.process &&
+                (root == null || owner.root == root) &&
+                (generation == null || owner.generation == generation)
+            proc = owner?.process ?: current
+            target = if (ownerMatches) owner?.pid ?: 0 else 0
+            canStopTree = ownerMatches && owner != null && ownerIsCurrentLocked(owner)
+        }
         var interrupted = Thread.interrupted()
         try {
-            if (target > 0) ProcUtil.stopTree(target, graceMs = 0)
+            if (canStopTree && target > 0 && proc?.isAliveCompat() == true) {
+                ProcUtil.stopTree(target, graceMs = 0)
+            }
             proc?.destroy()
             root?.let { quiescePayload(it) }
             while (true) {
@@ -471,11 +487,23 @@ class HermesService : Service() {
                 }
             }
             root?.let { quiescePayload(it) }
-            if (process === proc) process = null
+            synchronized(lifecycleLock) {
+                if (process === proc) {
+                    process = null
+                    if (processOwner?.process === proc) processOwner = null
+                }
+            }
             if (pid == target) pid = 0
         } finally {
             if (interrupted) Thread.currentThread().interrupt()
         }
+    }
+
+    private fun ownerIsCurrentLocked(owner: ProcessOwner): Boolean {
+        if (processOwner !== owner || process !== owner.process || !owner.process.isAliveCompat()) return false
+        return ProcUtil.list().firstOrNull { it.pid == owner.pid }
+            ?.cmdline
+            ?.contains(owner.root) == true
     }
 
     /** Includes orphaned candidates after app death; failure prevents slot mutation. */
@@ -533,17 +561,23 @@ class HermesService : Service() {
     private fun stopRuntime(generation: Long) {
         val proc: java.lang.Process?
         val target: Int
+        val owner: ProcessOwner?
         synchronized(lifecycleLock) {
             if (generation != activeTeardownGeneration) return
             stopping = true
             proc = process
-            target = pid
+            owner = processOwner
+            target = owner?.pid ?: 0
             if (proc != null || target > 0 || worker?.isAlive == true) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
             }
             // Re-check the teardown generation immediately before killing the owned process.
             if (generation != activeTeardownGeneration) return
-            if (target > 0) ProcUtil.stopTree(target) else proc?.destroy()
+            if (owner != null && target > 0 && ownerIsCurrentLocked(owner) && proc?.isAliveCompat() == true) {
+                ProcUtil.stopTree(target)
+            } else {
+                proc?.destroy()
+            }
         }
         try {
             proc?.waitFor()
@@ -553,6 +587,7 @@ class HermesService : Service() {
         synchronized(lifecycleLock) {
             if (generation != activeTeardownGeneration) return
             process = null
+            processOwner = null
             pid = 0
             HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
         }

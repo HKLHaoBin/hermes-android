@@ -50,7 +50,7 @@ class ReviewedSourceTests(unittest.TestCase):
     def test_all_activation_failures_cleanup_before_rollback_and_restart_fallback(self):
         service = method(self.service, "runRuntime")
         failure = service[service.index("} catch (t: Throwable)"):]
-        self.assertLess(failure.index("stopOwnedProcess(attemptedRoot)"), failure.index("installer.rollback("))
+        self.assertLess(failure.index("stopOwnedProcess(attemptedRoot, generation)"), failure.index("installer.rollback("))
         self.assertIn("installer.rollback(::quiescePayload)", failure)
         self.assertIn("return runRuntime(generation)", failure)
         self.assertIn("if (isGenerationCurrent(generation) && restored != null && restoredManifest != null)", failure)
@@ -136,7 +136,7 @@ class ReviewedSourceTests(unittest.TestCase):
 
     def test_gc_runs_before_space_check_and_after_every_health_check(self):
         service = method(self.service, "runRuntime")
-        self.assertLess(service.index("installer.pruneStaleSlots()"), service.index("if (needsInstall"))
+        self.assertLess(service.index("installer.pruneStaleSlots(::quiescePayload)"), service.index("if (needsInstall"))
         healthy = method(self.installer, "markHealthy")
         self.assertRegex(healthy, r"\n        }\n        pruneSlots\(\)")
         prune = method(self.installer, "pruneSlots")

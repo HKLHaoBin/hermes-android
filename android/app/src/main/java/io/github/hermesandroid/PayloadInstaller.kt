@@ -70,7 +70,7 @@ class PayloadInstaller(private val context: Context) {
         "unknown"
     }
 
-    fun pruneStaleSlots() = pruneSlots()
+    fun pruneStaleSlots(beforeDiscard: ((String) -> Unit)? = null) = pruneSlots(beforeDiscard)
 
     fun needsInstall(manifest: JSONObject): Boolean {
         val id = manifest.getString("payload_id")
@@ -232,7 +232,7 @@ class PayloadInstaller(private val context: Context) {
         }
         val mode = Os.lstat(current.absolutePath).st_mode and MODE_MASK
         if (current.isDirectory) {
-            if (relative.isNotEmpty()) out += ContentEntry(relative, 'D', current, mode = mode)
+            out += ContentEntry(relative, 'D', current, mode = mode)
             val children = current.listFiles() ?: throw IOException("无法读取 payload slot")
             for (child in children.sortedBy { it.name }) {
                 if (relative.isEmpty() && child.name in METADATA_FILES) continue
@@ -594,7 +594,7 @@ class PayloadInstaller(private val context: Context) {
         if (FileTools.isSymlink(slotsDir)) throw IOException("payload slots root is symlink")
         slotsDir.mkdirs()
         if (!slotsDir.isDirectory) throw IOException("无法创建 payload slots root")
-        pruneSlots()
+        pruneSlots(beforeDiscard)
         val candidate = slotDir(payloadId)
         var current = activeSlotId()
         var previous = previousGoodSlotId()
@@ -903,11 +903,34 @@ class PayloadInstaller(private val context: Context) {
         if (!temp.renameTo(stateFile)) throw IOException("无法原子写入运行环境状态")
     }
 
-    /** Keep only the active and previous-good slots; remove failed/stale candidates. */
-    private fun pruneSlots() {
+    /** Keep only verified active/previous-good slots; remove failed/stale candidates. */
+    private fun pruneSlots(beforeDiscard: ((String) -> Unit)? = null) {
         val state = readState()
         ensureSlotsRoot()
-        val keep = setOfNotNull(state.optStringOrNull("active"), state.optStringOrNull("previous_good"))
+        val active = state.optStringOrNull("active")
+        val previous = state.optStringOrNull("previous_good")
+        val validActive = active?.takeIf { validateSlot(slotDir(it), null) }
+        val validPrevious = previous?.takeIf { it != validActive && validateSlot(slotDir(it), null) }
+        val invalidActive = active != null && validActive == null
+        val invalidPrevious = previous != null && validPrevious == null
+        if (invalidActive && beforeDiscard == null) {
+            throw IOException("active slot integrity invalid; quiescence callback required")
+        }
+        if (invalidActive) beforeDiscard?.invoke(slotDir(active!!).absolutePath)
+        if (invalidPrevious) beforeDiscard?.invoke(slotDir(previous!!).absolutePath)
+        val newActive = validActive ?: validPrevious
+        val newPrevious = if (validActive == null) null else validPrevious
+        if (invalidActive || invalidPrevious) {
+            writeState(
+                newActive,
+                newPrevious,
+                pending = false,
+                generation = state.optLong("generation", 0L) + 1L,
+                rejected = state.optStringOrNull("rejected"),
+                reusedPreviousGood = false,
+            )
+        }
+        val keep = setOfNotNull(newActive, newPrevious)
         slotsDir.listFiles()?.forEach { child ->
             if (child.name !in keep) {
                 FileTools.deleteTree(child)
