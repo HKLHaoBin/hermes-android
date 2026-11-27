@@ -53,3 +53,7 @@ Android container smoke tests are not real-device/WebView/OEM acceptance. Androi
 ## Rollback rule
 
 Do not uninstall the app or clear app data to recover from an update. APK rollback is a same-signer forward rollback build with a higher versionCode. Payload rollback uses the retained previous-good slot and does not remove `files/home`, WebView state, workspace files or the ledger.
+
+## Integration preparation
+
+The parent Issue #1 staging compatibility matrix and merge gate are recorded in [`docs/issue-7-integration.md`](issue-7-integration.md). It covers the capability diagnostics and JobLedger surfaces from PR #2/#3/#4 and requires them to remain additive when Issue #7 is integrated.

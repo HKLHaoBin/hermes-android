@@ -40,7 +40,15 @@ jobs:
           [[ ${#apks[@]} == 1 ]]
           apk=${apks[0]}
           sha256sum --check --strict "$apk.sha256"
-          [[ -s update-receipt.json && -s update-receipt.sig && -s update-signing-cert.pem ]]
+          sha256sum --check --strict update-receipt.json.sha256
+          [[ -s update-receipt.json && -s update-receipt.sig && -s update-signing-cert.pem && -s payload-manifest.json ]]
+          receipt_apk_sha=$(jq -er .apk_sha256 update-receipt.json)
+          actual_apk_sha=$(sha256sum "$apk" | cut -d' ' -f1)
+          [[ "$receipt_apk_sha" = "$actual_apk_sha" ]]
+          receipt_manifest_sha=$(jq -er .manifest_sha256 update-receipt.json)
+          actual_manifest_sha=$(sha256sum payload-manifest.json | cut -d' ' -f1)
+          [[ "$receipt_manifest_sha" = "$actual_manifest_sha" ]]
+          [[ $(jq -er .payload_id update-receipt.json) = "$(jq -er .payload_id payload-manifest.json)" ]]
           cert_digest=$(openssl x509 -in update-signing-cert.pem -outform DER | sha256sum | cut -d' ' -f1)
           expected_cert=$(tr -d '\r\n' < release-cert.sha256)
           [[ "$cert_digest" = "$expected_cert" ]]
