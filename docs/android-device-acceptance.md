@@ -18,11 +18,11 @@ The harness records and gates:
 
 - exact device manufacturer, model, OEM, skin/build, ABI, Android release/API, security patch, display, IME, TalkBack, battery policy, notification permission, network backend and WebView provider/version;
 - exact APK filename, size, SHA-256, application ID, version name/code and signer certificate SHA-256;
-- exact Actions repository/workflow/run/head SHA;
+- exact Actions repository/workflow/run/head SHA, bound to `HKLHaoBin/hermes-android`, workflow `Build APK`, artifact `apk`, and the expected `hermes-android-*.apk` file;
 - exact Hermes runtime version/SHA/source commit/payload ID and WebUI revision;
 - one identical artifact identity across every required device receipt;
 - per-test status, observation, failure class, evidence paths and evidence hashes;
-- fixed per-test expected state, allowed evidence kinds and exact installed-APK identity;
+- fixed per-test expected state, allowed evidence kinds, non-empty hashable evidence and exact installed-APK identity;
 - redaction state and release-gate eligibility.
 
 The harness does not:
@@ -38,7 +38,7 @@ The existing `scripts/e2e.sh` is not the release harness. In particular, it chan
 
 ## Matrix slots
 
-`docs/android-device-matrix.json` contains only capability slots. Required M0 slots are:
+`docs/android-device-matrix.json` contains only capability slots. Required API slots and the required large-screen capability slot are:
 
 | Slot | API | OEM | ABI | Required |
 |---|---:|---|---|---|
@@ -46,8 +46,9 @@ The existing `scripts/e2e.sh` is not the release harness. In particular, it chan
 | `A14-Samsung` | 34 | Samsung | `arm64-v8a` | yes |
 | `A15-Xiaomi` | 35 | Xiaomi | `arm64-v8a` | yes |
 | `A16-Google` | 36 | Google | `arm64-v8a` | yes |
+| `Large-screen` | assigned device | any | `arm64-v8a` | yes |
 
-`Large-screen` and `OEM-stress` are M1 optional slots for the complete Issue #1 scope. They remain absent until an actual authorized device is assigned. A slot does not contain a model, serial, fingerprint, result, or status. Static validation compares every slot's API/OEM/ABI/tier/required fields with the harness contract; swapping A13/A14 values is invalid even if aggregate API coverage still looks complete.
+`Large-screen` is an M1 required slot for the explicit large-screen/foldable gate. `OEM-stress` remains an M1 optional slot. Both remain capability rows until an actual authorized device is assigned. A slot does not contain a model, serial, fingerprint, result, or status. Static validation compares every slot's API/OEM/ABI/tier/required fields with the harness contract; swapping A13/A14 values is invalid even if aggregate API coverage still looks complete.
 
 ## Status semantics
 
@@ -55,7 +56,7 @@ The only permitted statuses are exactly `PASS`, `FAIL`, `BLOCKED`, and `NOT RUN`
 
 | Status | Meaning | Release consequence |
 |---|---|---|
-| `PASS` | The step ran on the authorized device, expected state was observed, and evidence exists with matching hashes. | May contribute to a passing slot. |
+| `PASS` | The step ran on the authorized device, the harness-owned expected state was observed exactly, and non-empty evidence exists with matching hashes and timestamps. | May contribute to a passing slot. |
 | `FAIL` | The step ran and observed behavior did not meet the expectation. Failure class, reason and evidence are required. | Release gate fails. |
 | `BLOCKED` | The step could not run because an authorized prerequisite was absent or identity/evidence validation failed. | Release remains blocked. |
 | `NOT RUN` | The step is planned but was not attempted. | Release remains blocked. |
@@ -67,7 +68,7 @@ A receipt aggregate is derived from its tests:
 3. otherwise any `NOT RUN` -> `NOT RUN`;
 4. only all `PASS` -> `PASS`.
 
-The gate requires every M0 slot and every test ID to be `PASS`. It passes each receipt's `receipt_root` to validation and checks evidence file existence, content redaction and SHA-256 before eligibility. It also requires one identical APK/build/runtime/WebUI/payload artifact identity across all required slots. Missing receipts, duplicate slot receipts, mismatched API/OEM/ABI, invalid identity, `BLOCKED`, `NOT RUN`, missing evidence, hash mismatches or mixed artifacts are not release-ready states.
+The gate requires every required M0 API slot, the required `Large-screen` slot, and all 35 test IDs to be `PASS`. It passes each receipt's `receipt_root` to validation and checks evidence file existence, non-zero size, content redaction and SHA-256 before eligibility. It also requires one identical APK/build/runtime/WebUI/payload artifact identity across all required slots and rejects any repository/workflow/artifact/APK filename outside the canonical Actions provenance. Missing receipts, duplicate slot receipts, mismatched API/OEM/ABI, invalid identity, `BLOCKED`, `NOT RUN`, missing or zero-byte evidence, arbitrary PASS observations, hash mismatches or mixed artifacts are not release-ready states.
 
 Failure classes are `app`, `service`, `job`, `notification`, `webview`, `network`, `oem`, `artifact`, `device`, `operator`, and `unknown`.
 
@@ -93,6 +94,9 @@ Artifact identity includes:
 - Actions artifact name (`apk`) bound to that exact run;
 - runtime version, package SHA-256, source commit and payload ID;
 - 40-character WebUI revision.
+- Installed APK metadata read from the device package manager and APK path (`package_path`, SHA-256, size, application ID, version name and version code); it is not copied from `receipt.artifact.apk`, although those exact content/version fields must match it.
+
+For standalone capture and release-gate use, the artifact provenance is fixed to repository `HKLHaoBin/hermes-android`, workflow `Build APK`, Actions artifact `apk`, application ID `io.github.hkhaobin.hermeswebui`, and an APK filename matching `hermes-android-*.apk`. Other syntactically valid owner/repository, workflow, artifact or APK filename values are rejected before hardware capture or gate eligibility.
 
 An artifact manifest can be generated from an exact APK and the identity values read from the successful Actions artifact/build receipt. The command checks an adjacent `.sha256` sidecar when present:
 
@@ -183,7 +187,7 @@ python3 scripts/android_device_matrix.py record \
   --evidence receipts/<slot-id>/screen.png
 ```
 
-Every test record requires the harness-owned `expected` contract, a non-empty `--reason`, and an `installed_apk` object that exactly equals `receipt.artifact.apk`. Evidence kinds are checked against the fixed contract for that test; pass them explicitly with one `--evidence-kind` per `--evidence` when the file suffix is not the semantic kind. For `FAIL` or `BLOCKED`, also provide `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite and no evidence. Evidence paths are relative in the receipt, re-hashed, and content-scanned by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence, is bound to a different APK, uses an unapproved evidence kind, or contains credentials.
+Every test record requires the harness-owned `expected` contract, a PASS `observed` value equal to that fixed expected state, a non-empty `--reason`, and an `installed_apk` object captured from the actual installed package metadata. Its SHA-256, size, application ID, version name and version code must exactly match `receipt.artifact.apk`; the package path remains the device-captured path and is never copied from the artifact manifest. Evidence kinds are checked against the fixed contract for that test; pass them explicitly with one `--evidence-kind` per `--evidence` when the file suffix is not the semantic kind. For `FAIL` or `BLOCKED`, also provide `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite and no evidence. Evidence paths are relative in the receipt, re-hashed, must be non-empty for executed tests, and content-scanned by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence, is bound to a different APK, uses an unapproved evidence kind, contains zero-byte evidence, or contains credentials including quoted JSON `token`/`password` keys.
 
 Validate one receipt:
 
@@ -197,14 +201,15 @@ python3 scripts/android_device_matrix.py validate-receipt \
 
 The harness requires every receipt to contain every test ID. The detailed test procedures and expected evidence are maintained here rather than hidden in a runner:
 
-- Identity/install: `RD-ID-01`, `RD-INSTALL-01`, `RD-INSTALL-02`, `RD-COLD-01`, `RD-UPGRADE-01`, `RD-ROLLBACK-01`.
+- Identity/install/migration: `RD-ID-01`, `RD-INSTALL-01`, `RD-INSTALL-02`, `RD-COLD-01`, `RD-UPGRADE-01`, `RD-MIGRATION-01`, `RD-ROLLBACK-01`.
 - Runtime/service/ledger: `RD-RUNTIME-01` through `RD-RUNTIME-05`, `RD-JOB-01`, `RD-JOB-02`.
 - WebView/transport: `RD-WEB-01`, `RD-WEB-02`, `RD-STREAM-01`, `RD-STREAM-02`, `RD-TERM-01`.
 - SAF/import: `RD-SAF-01` through `RD-SAF-05`.
-- Background/OEM: `RD-BG-01` through `RD-BG-04`.
+- Background/OEM and lifecycle: `RD-BG-01` through `RD-BG-04`, `RD-MEMORY-01`, `RD-PROCESS-01`.
+- Large-screen: `RD-LARGE-01` is an explicit required gate for large-screen/foldable usable surfaces; it is not satisfied implicitly by `RD-UX-04`.
 - Accessibility/IME/layout: `RD-UX-01` through `RD-UX-04`.
 
-The test IDs cover clean install, cold start, same-signer upgrade, declared rollback policy, start/stop/restart races, notification permission, system stop, process death, memory pressure, actual long Agent jobs, job retry/recovery, WebView feature/origin isolation, controlled streaming, network loss/reconnect, terminal auth/CSRF, SAF providers and failures, duplicate/image imports, lock screen, battery optimization, OEM policies, task removal/reboot, TalkBack, IME, rotation, font scale, split-screen and large-screen/foldable layouts.
+The 35 required test IDs cover clean install, cold start, same-signer upgrade, explicit data migration, declared rollback policy, start/stop/restart races, notification permission, system stop, process death, explicit memory pressure, explicit process recreation, actual long Agent jobs, job retry/recovery, WebView feature/origin isolation, controlled streaming, network loss/reconnect, terminal auth/CSRF, SAF providers and failures, duplicate/image imports, lock screen, battery optimization, OEM policies, task removal/reboot, TalkBack, IME, rotation, font scale, split-screen and the explicit large-screen/foldable layout gate.
 
 `RD-JOB-01` must exercise an actual integrated Agent job. Runtime health or container session creation is not a substitute for a long Agent job receipt.
 

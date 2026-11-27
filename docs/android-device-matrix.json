@@ -45,7 +45,7 @@
       "api_level": 0,
       "oem": "any",
       "abi": "arm64-v8a",
-      "required": false,
+      "required": true,
       "tier": "M1"
     },
     {
@@ -63,6 +63,7 @@
     "RD-INSTALL-02",
     "RD-COLD-01",
     "RD-UPGRADE-01",
+    "RD-MIGRATION-01",
     "RD-ROLLBACK-01",
     "RD-RUNTIME-01",
     "RD-RUNTIME-02",
@@ -85,6 +86,9 @@
     "RD-BG-02",
     "RD-BG-03",
     "RD-BG-04",
+    "RD-MEMORY-01",
+    "RD-PROCESS-01",
+    "RD-LARGE-01",
     "RD-UX-01",
     "RD-UX-02",
     "RD-UX-03",

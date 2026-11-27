@@ -27,6 +27,10 @@ SCHEMA_VERSION = 1
 RECEIPT_KIND = "android-device-acceptance"
 ARTIFACT_KIND = "android-build-artifact"
 REDACTION_POLICY_VERSION = "1"
+EXPECTED_REPOSITORY = "HKLHaoBin/hermes-android"
+EXPECTED_WORKFLOW = "Build APK"
+EXPECTED_ARTIFACT_NAME = "apk"
+EXPECTED_APPLICATION_ID = "io.github.hkhaobin.hermeswebui"
 STATUSES = ("PASS", "FAIL", "BLOCKED", "NOT RUN")
 FAILURE_CLASSES = (
     "app",
@@ -48,6 +52,7 @@ TEST_IDS = (
     "RD-INSTALL-02",
     "RD-COLD-01",
     "RD-UPGRADE-01",
+    "RD-MIGRATION-01",
     "RD-ROLLBACK-01",
     "RD-RUNTIME-01",
     "RD-RUNTIME-02",
@@ -70,6 +75,9 @@ TEST_IDS = (
     "RD-BG-02",
     "RD-BG-03",
     "RD-BG-04",
+    "RD-MEMORY-01",
+    "RD-PROCESS-01",
+    "RD-LARGE-01",
     "RD-UX-01",
     "RD-UX-02",
     "RD-UX-03",
@@ -87,6 +95,7 @@ TEST_CONTRACT = {
     "RD-INSTALL-02": _test_contract("Installed package reports the exact artifact application and version identity.", "apk-install", "json"),
     "RD-COLD-01": _test_contract("Cold start reaches the expected ready state.", "runtime-status", "log"),
     "RD-UPGRADE-01": _test_contract("Same-signer upgrade preserves application data and starts.", "apk-upgrade", "log"),
+    "RD-MIGRATION-01": _test_contract("Existing application data migrates to the expected current schema without loss.", "migration", "json", "log"),
     "RD-ROLLBACK-01": _test_contract("Declared rollback path restores the previous known-good application state.", "rollback", "log"),
     "RD-RUNTIME-01": _test_contract("Runtime launches with the manifest payload and reaches ready state.", "runtime-status", "log"),
     "RD-RUNTIME-02": _test_contract("Hermes runtime and WebUI report the expected pinned revisions.", "runtime-status", "json"),
@@ -109,6 +118,9 @@ TEST_CONTRACT = {
     "RD-BG-02": _test_contract("Backgrounding preserves the expected service and job state.", "job-ledger", "notification", "log"),
     "RD-BG-03": _test_contract("Process death recovery produces the expected durable job state.", "job-ledger", "log"),
     "RD-BG-04": _test_contract("OEM battery policy and task removal produce the expected explicit outcome.", "job-ledger", "notification", "log"),
+    "RD-MEMORY-01": _test_contract("Memory pressure preserves or recovers the expected runtime and job state.", "memory-pressure", "job-ledger", "log"),
+    "RD-PROCESS-01": _test_contract("System process recreation restores the expected service and session state.", "process-recreation", "job-ledger", "log"),
+    "RD-LARGE-01": _test_contract("Large-screen or foldable layout exposes every required surface at the expected usable size.", "large-screen", "layout", "screenshot"),
     "RD-UX-01": _test_contract("TalkBack exposes the expected labels and focus order.", "accessibility", "screenshot"),
     "RD-UX-02": _test_contract("The selected IME produces the expected input and focus behavior.", "ime", "screenshot"),
     "RD-UX-03": _test_contract("Rotation and font scale preserve the expected layout and interaction state.", "layout", "screenshot"),
@@ -122,7 +134,7 @@ REQUIRED_SLOTS = (
     {"slot_id": "A14-Samsung", "api_level": 34, "oem": "Samsung", "abi": "arm64-v8a", "required": True, "tier": "M0"},
     {"slot_id": "A15-Xiaomi", "api_level": 35, "oem": "Xiaomi", "abi": "arm64-v8a", "required": True, "tier": "M0"},
     {"slot_id": "A16-Google", "api_level": 36, "oem": "Google", "abi": "arm64-v8a", "required": True, "tier": "M0"},
-    {"slot_id": "Large-screen", "api_level": 0, "oem": "any", "abi": "arm64-v8a", "required": False, "tier": "M1"},
+    {"slot_id": "Large-screen", "api_level": 0, "oem": "any", "abi": "arm64-v8a", "required": True, "tier": "M1"},
     {"slot_id": "OEM-stress", "api_level": 0, "oem": "any", "abi": "arm64-v8a", "required": False, "tier": "M1"},
 )
 
@@ -138,7 +150,7 @@ _SECRET_KEY = re.compile(
 )
 _SECRET_VALUE = re.compile(
     r"(?:bearer\s+[A-Za-z0-9._~+/=-]+|"
-    r"(?:api[_-]?key|password|authorization|cookie|token|access[_-]?token|refresh[_-]?token)\s*[:=]\s*\S+)|"
+    r"[\"']?(?:api[_-]?key|password|authorization|cookie|token|access[_-]?token|refresh[_-]?token)[\"']?\s*[:=]\s*[\"']?[^\"'\s,}]+)|"
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     re.IGNORECASE,
 )
@@ -204,8 +216,53 @@ def _known_identity(value: Any, name: str, errors: list[str]) -> None:
 
 def _known_precondition(value: Any, name: str, errors: list[str]) -> None:
     _non_empty(value, name, errors)
-    if isinstance(value, str) and "unknown" in value.strip().lower():
-        errors.append(f"{name} must be known before a release PASS")
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        placeholder = re.search(r"(?:^|[-_\s])(?:n/?a|na|none|null|unset|fixture|test[-_ ]?only)(?:$|[-_\s])", normalized)
+        if normalized in _UNKNOWN_LITERALS or "unknown" in normalized or placeholder:
+            errors.append(f"{name} must be known before a release PASS")
+
+
+def _parse_installed_package_path(text: str) -> str:
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("package:"):
+            path = line.removeprefix("package:").strip()
+            if path and path.startswith("/") and ".." not in Path(path).parts:
+                return path
+    raise BlockedError("cannot capture the installed package APK path")
+
+
+def _parse_installed_package_metadata(text: str, package: str) -> tuple[str, int]:
+    if f"Package [{package}]" not in text:
+        raise BlockedError(f"dumpsys package did not identify installed package {package}")
+    version_code = re.search(r"\bversionCode=(\d+)\b", text)
+    version_name = re.search(r"\bversionName=([^\s]+)", text)
+    if not version_code or not version_name or not version_name.group(1).strip():
+        raise BlockedError(f"dumpsys package did not expose exact version metadata for {package}")
+    return version_name.group(1), int(version_code.group(1))
+
+
+def _installed_apk_metadata(adb: str, serial: str, package: str) -> dict[str, Any]:
+    package_path = _parse_installed_package_path(_run_adb(adb, serial, "shell", "pm", "path", package))
+    package_dump = _run_adb(adb, serial, "shell", "dumpsys", "package", package)
+    version_name, version_code = _parse_installed_package_metadata(package_dump, package)
+    digest_output = _run_adb(adb, serial, "shell", "sha256sum", package_path)
+    digest_match = re.search(r"\b([0-9a-fA-F]{64})\b", digest_output)
+    if not digest_match:
+        raise BlockedError("cannot capture the installed APK SHA-256")
+    size_output = _run_adb(adb, serial, "shell", "stat", "-c", "%s", package_path)
+    size_match = re.search(r"\b([0-9]+)\b", size_output)
+    if not size_match or int(size_match.group(1)) <= 0:
+        raise BlockedError("cannot capture the installed APK size")
+    return {
+        "package_path": package_path,
+        "sha256": digest_match.group(1).lower(),
+        "size_bytes": int(size_match.group(1)),
+        "application_id": package,
+        "version_name": version_name,
+        "version_code": version_code,
+    }
 
 
 def _object_shape(
@@ -302,6 +359,8 @@ def _evidence_errors(
                 errors.append(f"{prefix}.path does not exist: {item['path']}")
             else:
                 data = evidence_path.read_bytes()
+                if not data:
+                    errors.append(f"{prefix}.path must reference non-empty evidence: {item['path']}")
                 if sha256_file(evidence_path) != item.get("sha256"):
                     errors.append(f"{prefix}.sha256 does not match file: {item['path']}")
                 errors.extend(_evidence_content_findings(data, f"{prefix}.bytes"))
@@ -364,6 +423,30 @@ def _validate_apk(value: Any, name: str, errors: list[str]) -> bool:
     return True
 
 
+def _validate_installed_apk(value: Any, name: str, errors: list[str]) -> bool:
+    if not _object_shape(
+        value,
+        name,
+        required={"package_path", "sha256", "size_bytes", "application_id", "version_name", "version_code"},
+        allowed={"package_path", "sha256", "size_bytes", "application_id", "version_name", "version_code"},
+        errors=errors,
+    ):
+        return False
+    package_path = value.get("package_path")
+    _non_empty(package_path, f"{name}.package_path", errors)
+    if isinstance(package_path, str):
+        if ".." in package_path.split("/") or not re.fullmatch(r"/(?:data/app|product/app|system/app|system/priv-app)/.+\.apk", package_path):
+            errors.append(f"{name}.package_path must be an installed Android package APK path")
+    _sha(value.get("sha256"), f"{name}.sha256", errors)
+    for field in ("application_id", "version_name"):
+        _non_empty(value.get(field), f"{name}.{field}", errors)
+    if type(value.get("size_bytes")) is not int or value["size_bytes"] <= 0:
+        errors.append(f"{name}.size_bytes must be a positive integer")
+    if type(value.get("version_code")) is not int or value["version_code"] <= 0:
+        errors.append(f"{name}.version_code must be a positive integer")
+    return True
+
+
 def validate_artifact(artifact: Any) -> list[str]:
     errors: list[str] = []
     if not _object_shape(
@@ -408,6 +491,28 @@ def validate_artifact(artifact: Any) -> list[str]:
         _sha(runtime.get("sha256"), "artifact.runtime.sha256", errors)
         _sha(runtime.get("source_commit"), "artifact.runtime.source_commit", errors, length=40)
     _sha(artifact.get("webui_revision"), "artifact.webui_revision", errors, length=40)
+    return errors
+
+
+def validate_release_artifact(artifact: Any) -> list[str]:
+    errors = validate_artifact(artifact)
+    if errors or not isinstance(artifact, dict):
+        return errors
+    build = artifact.get("build")
+    apk = artifact.get("apk")
+    if isinstance(build, dict):
+        if build.get("repository") != EXPECTED_REPOSITORY:
+            errors.append(f"artifact.build.repository must be {EXPECTED_REPOSITORY}")
+        if build.get("workflow") != EXPECTED_WORKFLOW:
+            errors.append(f"artifact.build.workflow must be {EXPECTED_WORKFLOW}")
+        if build.get("artifact_name") != EXPECTED_ARTIFACT_NAME:
+            errors.append(f"artifact.build.artifact_name must be {EXPECTED_ARTIFACT_NAME}")
+    if isinstance(apk, dict):
+        filename = apk.get("filename")
+        if not isinstance(filename, str) or not re.fullmatch(r"hermes-android-[^/\\]+\.apk", filename):
+            errors.append("artifact.apk.filename must be the expected hermes-android APK file")
+        if apk.get("application_id") != EXPECTED_APPLICATION_ID:
+            errors.append(f"artifact.apk.application_id must be {EXPECTED_APPLICATION_ID}")
     return errors
 
 
@@ -565,6 +670,8 @@ def _validate_test(
         errors.append(f"{expected_id}.observed must be empty for NOT RUN")
     if status in {"PASS", "FAIL"}:
         _non_empty(test.get("observed"), f"{expected_id}.observed", errors)
+    if status == "PASS" and test.get("observed") != contract["expected"]:
+        errors.append(f"{expected_id}.observed must equal the fixed expected state for PASS")
     _non_empty(test.get("reason"), f"{expected_id}.reason", errors)
     failure_class = test.get("failure_class")
     if failure_class is not None and not isinstance(failure_class, str):
@@ -576,9 +683,11 @@ def _validate_test(
     if status == "PASS" and failure_class is not None:
         errors.append(f"{expected_id}.failure_class must be empty for PASS")
     installed_apk = test.get("installed_apk")
-    _validate_apk(installed_apk, f"{expected_id}.installed_apk", errors)
-    if artifact_apk is not None and installed_apk != artifact_apk:
-        errors.append(f"{expected_id}.installed_apk must exactly match receipt.artifact.apk")
+    _validate_installed_apk(installed_apk, f"{expected_id}.installed_apk", errors)
+    if artifact_apk is not None and isinstance(installed_apk, dict):
+        for field in ("sha256", "size_bytes", "application_id", "version_name", "version_code"):
+            if installed_apk.get(field) != artifact_apk.get(field):
+                errors.append(f"{expected_id}.installed_apk.{field} must match receipt.artifact.apk")
     if not isinstance(test.get("redaction_checked"), bool) or test.get("redaction_checked") is not True:
         errors.append(f"{expected_id}.redaction_checked must be true")
     errors.extend(_evidence_errors(test, allowed_kinds=contract["evidence_kinds"], receipt_root=receipt_root))
@@ -756,7 +865,7 @@ def validate_matrix(matrix: Any) -> list[str]:
                 errors.append(
                     f"matrix slot {slot['slot_id']}.{field} must be {expected[field]!r}, got {slot.get(field)!r}"
                 )
-    required_api = {slot["api_level"] for slot in slots if slot.get("required")}
+    required_api = {slot["api_level"] for slot in slots if slot.get("required") and slot.get("api_level")}
     if required_api != {33, 34, 35, 36}:
         errors.append("required matrix slots must cover API 33, 34, 35, and 36")
     return errors
@@ -1033,7 +1142,7 @@ def capture_receipt(
     backend_id: str,
     matrix: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    artifact_errors = validate_artifact(artifact)
+    artifact_errors = validate_release_artifact(artifact)
     if artifact_errors:
         raise HarnessError("invalid artifact manifest:\n- " + "\n- ".join(artifact_errors))
     if not operator_id.strip() or not authorization_ref.strip():
@@ -1091,6 +1200,7 @@ def capture_receipt(
         webview_raw = _run_adb(adb, serial, "shell", "dumpsys", "webviewupdate")
     webview = _parse_webview(webview_raw)
     package = artifact["apk"]["application_id"]
+    installed_apk = _installed_apk_metadata(adb, serial, package)
     serial_digest = hashlib.sha256(serial.encode("utf-8")).hexdigest()
     enabled_services = _run_adb(adb, serial, "shell", "settings", "get", "secure", "enabled_accessibility_services")
     default_ime = _run_adb(adb, serial, "shell", "settings", "get", "secure", "default_input_method").strip() or "unknown"
@@ -1150,7 +1260,7 @@ def capture_receipt(
                 "observed": "",
                 "reason": "Not executed; record only after the authorized test step runs.",
                 "failure_class": None,
-                "installed_apk": dict(artifact["apk"]),
+                "installed_apk": dict(installed_apk),
                 "evidence": [],
                 "redaction_checked": True,
             }
@@ -1229,7 +1339,6 @@ def record_test(
             "observed": observed,
             "reason": reason,
             "failure_class": failure_class,
-            "installed_apk": dict(receipt["artifact"]["apk"]),
             "evidence": evidence,
             "redaction_checked": not evidence_redaction_errors,
         }
@@ -1267,6 +1376,7 @@ def evaluate_gate(
             errors = ["receipt evidence root is missing or is not a directory"]
         else:
             errors = validate_receipt(receipt, matrix, receipt_root=root, check_evidence=True)
+            errors.extend(validate_release_artifact(receipt.get("artifact")))
         if errors:
             reasons.extend(f"receipt[{index}]: {error}" for error in errors)
             continue
@@ -1287,9 +1397,9 @@ def evaluate_gate(
             continue
         device = receipt["device"]
         mismatch = []
-        if device["api_level"] != slot["api_level"]:
+        if slot["api_level"] and device["api_level"] != slot["api_level"]:
             mismatch.append(f"api {device['api_level']} != {slot['api_level']}")
-        if device["oem"] != slot["oem"]:
+        if slot["oem"] != "any" and device["oem"] != slot["oem"]:
             mismatch.append(f"oem {device['oem']} != {slot['oem']}")
         if device["abi"] != slot["abi"]:
             mismatch.append(f"abi {device['abi']} != {slot['abi']}")
