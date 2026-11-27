@@ -76,6 +76,45 @@ TEST_IDS = (
     "RD-UX-04",
 )
 
+
+def _test_contract(expected: str, *evidence_kinds: str) -> dict[str, Any]:
+    return {"expected": expected, "evidence_kinds": tuple(evidence_kinds)}
+
+
+TEST_CONTRACT = {
+    "RD-ID-01": _test_contract("Authorized physical device identity matches the assigned matrix slot.", "device-metadata", "json"),
+    "RD-INSTALL-01": _test_contract("Exact signed APK installs without clearing application data.", "apk-install", "log"),
+    "RD-INSTALL-02": _test_contract("Installed package reports the exact artifact application and version identity.", "apk-install", "json"),
+    "RD-COLD-01": _test_contract("Cold start reaches the expected ready state.", "runtime-status", "log"),
+    "RD-UPGRADE-01": _test_contract("Same-signer upgrade preserves application data and starts.", "apk-upgrade", "log"),
+    "RD-ROLLBACK-01": _test_contract("Declared rollback path restores the previous known-good application state.", "rollback", "log"),
+    "RD-RUNTIME-01": _test_contract("Runtime launches with the manifest payload and reaches ready state.", "runtime-status", "log"),
+    "RD-RUNTIME-02": _test_contract("Hermes runtime and WebUI report the expected pinned revisions.", "runtime-status", "json"),
+    "RD-RUNTIME-03": _test_contract("Capability diagnostics report the expected Android API and ABI.", "capabilities", "json"),
+    "RD-RUNTIME-04": _test_contract("Runtime restart preserves the expected session and service state.", "runtime-status", "log"),
+    "RD-RUNTIME-05": _test_contract("Unsupported capability is reported with an explicit bounded state.", "capabilities", "json"),
+    "RD-JOB-01": _test_contract("An actual integrated Agent job completes with durable ledger state.", "job-ledger", "notification", "log"),
+    "RD-JOB-02": _test_contract("A recovered job resumes or fails with bounded retry and notification state.", "job-ledger", "notification", "log"),
+    "RD-WEB-01": _test_contract("WebView origin and feature isolation remain within the expected boundary.", "webview", "screenshot", "log"),
+    "RD-WEB-02": _test_contract("WebView authentication and CSRF behavior match the expected policy.", "webview", "network", "log"),
+    "RD-STREAM-01": _test_contract("Streaming response reaches the expected terminal state.", "stream", "log"),
+    "RD-STREAM-02": _test_contract("Network loss and reconnect preserve the expected stream and session state.", "stream", "network", "log"),
+    "RD-TERM-01": _test_contract("Terminal authentication and transport controls enforce the expected policy.", "terminal", "log"),
+    "RD-SAF-01": _test_contract("Scoped-storage picker imports the selected file with an exact receipt.", "file-import", "json"),
+    "RD-SAF-02": _test_contract("Unsupported or failed picker input produces the expected visible failure.", "file-import", "log"),
+    "RD-SAF-03": _test_contract("Duplicate import handling preserves the expected file identity.", "file-import", "json"),
+    "RD-SAF-04": _test_contract("Image import preserves the expected metadata and ownership.", "file-import", "json"),
+    "RD-SAF-05": _test_contract("Large or non-image import remains within the expected storage boundary.", "file-import", "log"),
+    "RD-BG-01": _test_contract("Locked-screen foreground operation preserves the expected job state.", "job-ledger", "notification", "log"),
+    "RD-BG-02": _test_contract("Backgrounding preserves the expected service and job state.", "job-ledger", "notification", "log"),
+    "RD-BG-03": _test_contract("Process death recovery produces the expected durable job state.", "job-ledger", "log"),
+    "RD-BG-04": _test_contract("OEM battery policy and task removal produce the expected explicit outcome.", "job-ledger", "notification", "log"),
+    "RD-UX-01": _test_contract("TalkBack exposes the expected labels and focus order.", "accessibility", "screenshot"),
+    "RD-UX-02": _test_contract("The selected IME produces the expected input and focus behavior.", "ime", "screenshot"),
+    "RD-UX-03": _test_contract("Rotation and font scale preserve the expected layout and interaction state.", "layout", "screenshot"),
+    "RD-UX-04": _test_contract("Large-screen or split-screen layout preserves the expected usable surfaces.", "layout", "screenshot"),
+}
+
 # These are capability slots, not devices.  No model, serial, or result is
 # stored here; an authorized run must provide those values in a receipt.
 REQUIRED_SLOTS = (
@@ -163,6 +202,12 @@ def _known_identity(value: Any, name: str, errors: list[str]) -> None:
         errors.append(f"{name} must contain a captured identity, not {value!r}")
 
 
+def _known_precondition(value: Any, name: str, errors: list[str]) -> None:
+    _non_empty(value, name, errors)
+    if isinstance(value, str) and "unknown" in value.strip().lower():
+        errors.append(f"{name} must be known before a release PASS")
+
+
 def _object_shape(
     value: Any,
     name: str,
@@ -224,7 +269,12 @@ def _relative_evidence_path(path: str) -> bool:
     return not candidate.is_absolute() and ".." not in candidate.parts
 
 
-def _evidence_errors(test: dict[str, Any], *, receipt_root: Path | None = None) -> list[str]:
+def _evidence_errors(
+    test: dict[str, Any],
+    *,
+    allowed_kinds: tuple[str, ...],
+    receipt_root: Path | None = None,
+) -> list[str]:
     errors: list[str] = []
     evidence = test.get("evidence")
     if not isinstance(evidence, list):
@@ -244,6 +294,8 @@ def _evidence_errors(test: dict[str, Any], *, receipt_root: Path | None = None) 
             errors.append(f"{prefix}.path must be relative and cannot contain ..")
         _sha(item.get("sha256"), f"{prefix}.sha256", errors)
         _non_empty(item.get("kind"), f"{prefix}.kind", errors)
+        if item.get("kind") not in allowed_kinds:
+            errors.append(f"{prefix}.kind must be one of {allowed_kinds} for {test.get('id')}")
         if receipt_root is not None and isinstance(item.get("path"), str) and _relative_evidence_path(item["path"]):
             evidence_path = receipt_root / item["path"]
             if not evidence_path.is_file():
@@ -292,6 +344,26 @@ def artifact_identity(artifact: dict[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _validate_apk(value: Any, name: str, errors: list[str]) -> bool:
+    if not _object_shape(
+        value,
+        name,
+        required={"filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"},
+        allowed={"filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"},
+        errors=errors,
+    ):
+        return False
+    for field in ("filename", "application_id", "version_name"):
+        _non_empty(value.get(field), f"{name}.{field}", errors)
+    _sha(value.get("sha256"), f"{name}.sha256", errors)
+    _sha(value.get("signer_sha256"), f"{name}.signer_sha256", errors)
+    if type(value.get("size_bytes")) is not int or value["size_bytes"] <= 0:
+        errors.append(f"{name}.size_bytes must be a positive integer")
+    if type(value.get("version_code")) is not int or value["version_code"] <= 0:
+        errors.append(f"{name}.version_code must be a positive integer")
+    return True
+
+
 def validate_artifact(artifact: Any) -> list[str]:
     errors: list[str] = []
     if not _object_shape(
@@ -304,26 +376,12 @@ def validate_artifact(artifact: Any) -> list[str]:
         return errors
     if artifact.get("artifact_kind") != ARTIFACT_KIND:
         errors.append(f"artifact_kind must be {ARTIFACT_KIND}")
-    if artifact.get("schema_version") != SCHEMA_VERSION:
+    if type(artifact.get("schema_version")) is not int or artifact.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"artifact schema_version must be {SCHEMA_VERSION}")
     apk = artifact.get("apk")
     build = artifact.get("build")
     runtime = artifact.get("runtime")
-    if _object_shape(
-        apk,
-        "artifact.apk",
-        required={"filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"},
-        allowed={"filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"},
-        errors=errors,
-    ):
-        for field in ("filename", "application_id", "version_name"):
-            _non_empty(apk.get(field), f"artifact.apk.{field}", errors)
-        _sha(apk.get("sha256"), "artifact.apk.sha256", errors)
-        _sha(apk.get("signer_sha256"), "artifact.apk.signer_sha256", errors)
-        if not isinstance(apk.get("size_bytes"), int) or apk["size_bytes"] <= 0:
-            errors.append("artifact.apk.size_bytes must be a positive integer")
-        if not isinstance(apk.get("version_code"), int) or apk["version_code"] <= 0:
-            errors.append("artifact.apk.version_code must be a positive integer")
+    _validate_apk(apk, "artifact.apk", errors)
     if _object_shape(
         build,
         "artifact.build",
@@ -398,17 +456,19 @@ def validate_device(device: Any) -> list[str]:
         _known_identity(device.get(field), f"device.{field}", errors)
     if device.get("abi") != "arm64-v8a":
         errors.append("device.abi must be arm64-v8a")
-    if not isinstance(device.get("api_level"), int) or device["api_level"] not in {33, 34, 35, 36}:
+    if type(device.get("api_level")) is not int or device["api_level"] not in {33, 34, 35, 36}:
         errors.append("device.api_level must be one of 33, 34, 35, 36")
     _sha(device.get("serial_sha256"), "device.serial_sha256", errors)
     _non_empty(device.get("serial_suffix"), "device.serial_suffix", errors)
+    if isinstance(device.get("serial_suffix"), str) and len(device["serial_suffix"]) > 8:
+        errors.append("device.serial_suffix must be at most 8 characters")
     if not isinstance(device.get("authorized"), bool) or not device.get("authorized"):
         errors.append("device.authorized must be true for a hardware receipt")
     if device.get("is_emulator") is not False:
         errors.append("device.is_emulator must be false for real hardware")
     transport = device.get("transport")
-    if not isinstance(transport, str) or not transport.strip():
-        errors.append("device.transport must be a non-empty transport")
+    if transport not in {"usb", "tcpip"}:
+        errors.append("device.transport must be usb or tcpip")
     elif transport.lower() in _EMULATOR_TRANSPORTS or "emulator" in transport.lower():
         errors.append("device.transport identifies an emulator/test endpoint")
     webview = device.get("webview")
@@ -430,7 +490,7 @@ def validate_device(device: Any) -> list[str]:
         errors=errors,
     ):
         for field in ("width", "height", "density"):
-            if not isinstance(display.get(field), int) or display[field] <= 0:
+            if type(display.get(field)) is not int or display[field] <= 0:
                 errors.append(f"device.display.{field} must be a positive integer")
     input_info = device.get("input")
     if _object_shape(
@@ -451,10 +511,10 @@ def validate_device(device: Any) -> list[str]:
         allowed={"optimization", "oem_policy"},
         errors=errors,
     ):
-        if not isinstance(battery.get("optimization"), str) or battery.get("optimization") not in {"optimized", "exempt", "unknown"}:
-            errors.append("device.battery.optimization must be optimized, exempt, or unknown")
-        _non_empty(battery.get("oem_policy"), "device.battery.oem_policy", errors)
-    if not isinstance(device.get("notification_permission"), str) or device.get("notification_permission") not in {"allow", "deny", "default", "unknown"}:
+        if battery.get("optimization") not in {"optimized", "exempt"}:
+            errors.append("device.battery.optimization must be optimized or exempt; unknown blocks release")
+        _known_precondition(battery.get("oem_policy"), "device.battery.oem_policy", errors)
+    if device.get("notification_permission") not in {"allow", "deny", "default"}:
         errors.append("device.notification_permission has an invalid value")
     network = device.get("network")
     if _object_shape(
@@ -464,24 +524,45 @@ def validate_device(device: Any) -> list[str]:
         allowed={"mode", "backend_id"},
         errors=errors,
     ):
-        _non_empty(network.get("mode"), "device.network.mode", errors)
+        _known_precondition(network.get("mode"), "device.network.mode", errors)
         _non_empty(network.get("backend_id"), "device.network.backend_id", errors)
     return errors
 
 
-def _validate_test(test: Any, expected_id: str, *, receipt_root: Path | None = None) -> list[str]:
+def _validate_test(
+    test: Any,
+    expected_id: str,
+    *,
+    artifact_apk: dict[str, Any] | None,
+    receipt_root: Path | None = None,
+) -> list[str]:
     errors: list[str] = []
-    required = {"id", "status", "observed", "reason", "failure_class", "evidence", "redaction_checked"}
+    required = {
+        "id",
+        "status",
+        "expected",
+        "observed",
+        "reason",
+        "failure_class",
+        "installed_apk",
+        "evidence",
+        "redaction_checked",
+    }
     if not _object_shape(test, f"tests[{expected_id}]", required=required, allowed=required | {"started_at", "finished_at"}, errors=errors):
         return errors
     if test.get("id") != expected_id:
         errors.append(f"test id mismatch: expected {expected_id}")
+    contract = TEST_CONTRACT[expected_id]
+    if test.get("expected") != contract["expected"]:
+        errors.append(f"{expected_id}.expected must match the fixed test contract")
     status = test.get("status")
     if status not in STATUSES:
         errors.append(f"{expected_id}.status must be one of {STATUSES}")
         return errors
     if not isinstance(test.get("observed"), str):
         errors.append(f"{expected_id}.observed must be a string")
+    if test.get("status") == "NOT RUN" and test.get("observed") != "":
+        errors.append(f"{expected_id}.observed must be empty for NOT RUN")
     if status in {"PASS", "FAIL"}:
         _non_empty(test.get("observed"), f"{expected_id}.observed", errors)
     _non_empty(test.get("reason"), f"{expected_id}.reason", errors)
@@ -494,11 +575,17 @@ def _validate_test(test: Any, expected_id: str, *, receipt_root: Path | None = N
         errors.append(f"{expected_id}.failure_class is required for {status}")
     if status == "PASS" and failure_class is not None:
         errors.append(f"{expected_id}.failure_class must be empty for PASS")
+    installed_apk = test.get("installed_apk")
+    _validate_apk(installed_apk, f"{expected_id}.installed_apk", errors)
+    if artifact_apk is not None and installed_apk != artifact_apk:
+        errors.append(f"{expected_id}.installed_apk must exactly match receipt.artifact.apk")
     if not isinstance(test.get("redaction_checked"), bool) or test.get("redaction_checked") is not True:
         errors.append(f"{expected_id}.redaction_checked must be true")
-    errors.extend(_evidence_errors(test, receipt_root=receipt_root))
+    errors.extend(_evidence_errors(test, allowed_kinds=contract["evidence_kinds"], receipt_root=receipt_root))
     if status in {"PASS", "FAIL"} and not test.get("evidence"):
         errors.append(f"{expected_id}.evidence is required for {status}")
+    if status == "NOT RUN" and test.get("evidence"):
+        errors.append(f"{expected_id}.evidence must be empty for NOT RUN")
     for field in ("started_at", "finished_at"):
         if field in test:
             _timestamp(test.get(field), f"{expected_id}.{field}", errors)
@@ -532,7 +619,7 @@ def validate_receipt(
         return errors
     if receipt.get("receipt_kind") != RECEIPT_KIND:
         errors.append(f"receipt_kind must be {RECEIPT_KIND}")
-    if receipt.get("schema_version") != SCHEMA_VERSION:
+    if type(receipt.get("schema_version")) is not int or receipt.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"schema_version must be {SCHEMA_VERSION}")
     for field in ("receipt_id",):
         _non_empty(receipt.get(field), field, errors)
@@ -558,7 +645,7 @@ def validate_receipt(
         errors=errors,
     ):
         for field in ("install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"):
-            _non_empty(preconditions.get(field), f"preconditions.{field}", errors)
+            _known_precondition(preconditions.get(field), f"preconditions.{field}", errors)
     redaction = receipt.get("redaction")
     if _object_shape(
         redaction,
@@ -598,7 +685,17 @@ def validate_receipt(
     errors.extend(f"unknown test id: {test_id}" for test_id in extra)
     for test_id in expected_ids:
         if test_id in by_id:
-            errors.extend(_validate_test(by_id[test_id], test_id, receipt_root=receipt_root if check_evidence else None))
+            artifact_apk = None
+            if isinstance(receipt.get("artifact"), dict) and isinstance(receipt["artifact"].get("apk"), dict):
+                artifact_apk = receipt["artifact"]["apk"]
+            errors.extend(
+                _validate_test(
+                    by_id[test_id],
+                    test_id,
+                    artifact_apk=artifact_apk,
+                    receipt_root=receipt_root if check_evidence else None,
+                )
+            )
     statuses = [by_id[test_id].get("status") for test_id in expected_ids if test_id in by_id]
     computed = aggregate_status(statuses)
     if receipt.get("aggregate_status") != computed:
@@ -614,7 +711,7 @@ def validate_matrix(matrix: Any) -> list[str]:
         return ["matrix must be an object"]
     if matrix.get("matrix_kind") != "android-device-acceptance-matrix":
         errors.append("matrix_kind is invalid")
-    if matrix.get("schema_version") != SCHEMA_VERSION:
+    if type(matrix.get("schema_version")) is not int or matrix.get("schema_version") != SCHEMA_VERSION:
         errors.append(f"matrix schema_version must be {SCHEMA_VERSION}")
     test_ids = matrix.get("test_ids")
     if test_ids != list(TEST_IDS):
@@ -634,7 +731,7 @@ def validate_matrix(matrix: Any) -> list[str]:
             errors.append(f"duplicate matrix slot: {slot_id}")
         else:
             seen.add(slot_id)
-        if not isinstance(slot.get("api_level"), int) or slot["api_level"] not in {0, 33, 34, 35, 36}:
+        if type(slot.get("api_level")) is not int or slot["api_level"] not in {0, 33, 34, 35, 36}:
             errors.append(f"slots[{index}].api_level must be 0 or 33..36")
         if slot.get("abi") != "arm64-v8a":
             errors.append(f"slots[{index}].abi must be arm64-v8a")
@@ -911,6 +1008,19 @@ def _battery_optimization(adb: str, serial: str, package: str) -> tuple[str, str
     return "unknown", "reported-by-deviceidle"
 
 
+def _network_mode(adb: str, serial: str) -> str:
+    try:
+        raw = _run_adb(adb, serial, "shell", "dumpsys", "connectivity")
+    except BlockedError:
+        return "unknown"
+    upper = raw.upper()
+    if "DISCONNECTED" in upper:
+        return "disconnected"
+    if "CONNECTED" in upper:
+        return "connected"
+    return "unknown"
+
+
 def capture_receipt(
     *,
     artifact: dict[str, Any],
@@ -987,7 +1097,7 @@ def capture_receipt(
     battery_optimization, oem_policy = _battery_optimization(adb, serial, package)
     notification_permission = _notification_permission(adb, serial, package)
     airplane = _run_adb(adb, serial, "shell", "settings", "get", "global", "airplane_mode_on").strip()
-    network_mode = "airplane" if airplane == "1" else "connected-unknown"
+    network_mode = "airplane" if airplane == "1" else _network_mode(adb, serial)
     receipt = {
         "receipt_kind": RECEIPT_KIND,
         "schema_version": SCHEMA_VERSION,
@@ -1036,9 +1146,11 @@ def capture_receipt(
             {
                 "id": test_id,
                 "status": "NOT RUN",
+                "expected": TEST_CONTRACT[test_id]["expected"],
                 "observed": "",
                 "reason": "Not executed; record only after the authorized test step runs.",
                 "failure_class": None,
+                "installed_apk": dict(artifact["apk"]),
                 "evidence": [],
                 "redaction_checked": True,
             }
@@ -1053,6 +1165,8 @@ def capture_receipt(
     }
     errors = validate_receipt(receipt, matrix_data)
     if errors:
+        if any("unknown" in error.lower() or "must be known" in error.lower() for error in errors):
+            raise BlockedError("device capture has unknown or incomplete release preconditions:\n- " + "\n- ".join(errors))
         raise HarnessError("captured receipt failed validation:\n- " + "\n- ".join(errors))
     _write_json_atomic(output, receipt)
     return receipt
@@ -1067,6 +1181,7 @@ def record_test(
     reason: str,
     failure_class: str | None,
     evidence_paths: list[Path],
+    evidence_kinds: list[str] | None = None,
 ) -> dict[str, Any]:
     if test_id not in TEST_IDS:
         raise HarnessError(f"unknown test id: {test_id}")
@@ -1078,7 +1193,14 @@ def record_test(
     root = receipt_path.parent.resolve()
     evidence: list[dict[str, str]] = []
     evidence_redaction_errors: list[str] = []
-    for path in evidence_paths:
+    if evidence_kinds is not None and len(evidence_kinds) != len(evidence_paths):
+        raise HarnessError("evidence-kind count must match evidence count")
+    kinds = evidence_kinds or [path.suffix.lstrip(".") or "file" for path in evidence_paths]
+    allowed_kinds = TEST_CONTRACT[test_id]["evidence_kinds"]
+    invalid_kinds: list[str] = []
+    for path, kind in zip(evidence_paths, kinds):
+        if kind not in allowed_kinds:
+            invalid_kinds.append(kind)
         resolved = path.resolve()
         try:
             relative = resolved.relative_to(root)
@@ -1091,19 +1213,23 @@ def record_test(
         evidence.append({
             "path": relative.as_posix(),
             "sha256": hashlib.sha256(data).hexdigest(),
-            "kind": resolved.suffix.lstrip(".") or "file",
+            "kind": kind,
         })
     if evidence_redaction_errors:
         raise HarnessError("redaction: evidence contains secret-like content:\n- " + "\n- ".join(evidence_redaction_errors))
+    if invalid_kinds:
+        raise HarnessError(f"evidence kinds {invalid_kinds!r} are not allowed for {test_id}; expected one of {allowed_kinds}")
     test = next((item for item in receipt.get("tests", []) if item.get("id") == test_id), None)
     if test is None:
         raise HarnessError(f"receipt has no test id: {test_id}")
     test.update(
         {
             "status": status,
+            "expected": TEST_CONTRACT[test_id]["expected"],
             "observed": observed,
             "reason": reason,
             "failure_class": failure_class,
+            "installed_apk": dict(receipt["artifact"]["apk"]),
             "evidence": evidence,
             "redaction_checked": not evidence_redaction_errors,
         }
@@ -1281,6 +1407,7 @@ def _command_record(args: argparse.Namespace) -> int:
         reason=args.reason,
         failure_class=args.failure_class,
         evidence_paths=[Path(item) for item in args.evidence],
+        evidence_kinds=args.evidence_kind or None,
     )
     print(json.dumps({"updated": args.receipt, "aggregate_status": receipt["aggregate_status"]}, ensure_ascii=False, indent=2))
     return EXIT_PASS
@@ -1368,6 +1495,7 @@ def _build_parser() -> argparse.ArgumentParser:
     record_parser.add_argument("--reason", default="")
     record_parser.add_argument("--failure-class", choices=FAILURE_CLASSES)
     record_parser.add_argument("--evidence", action="append", default=[])
+    record_parser.add_argument("--evidence-kind", action="append", default=[])
     record_parser.set_defaults(handler=_command_record)
 
     gate_parser = sub.add_parser("gate")

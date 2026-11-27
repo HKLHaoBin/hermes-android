@@ -13,18 +13,25 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import android_device_matrix as matrix
 import create_android_artifact_manifest as artifact_builder
+import verify_android_artifact_manifest as artifact_verifier
 
 
 BUILD_WORKFLOW = ROOT / ".github/workflows/build-apk.yml"
 PUBLISH_WORKFLOW = ROOT / ".github/workflows/publish-apk.yml"
 HARNESS = ROOT / "scripts/android_device_matrix.py"
 MANIFEST_BUILDER = ROOT / "scripts/create_android_artifact_manifest.py"
+MANIFEST_VERIFIER = ROOT / "scripts/verify_android_artifact_manifest.py"
+JOB_LEDGER_SOURCE = ROOT / "android/app/src/main/java/io/github/hermesandroid/JobLedger.kt"
+JOB_LEDGER_DOC = ROOT / "docs/job-ledger.md"
+JOB_LEDGER_CONTRACT = ROOT / "scripts/test_job_ledger_contract.py"
+JOB_LEDGER_SOURCE_TEST = ROOT / "scripts/test_job_ledger_source.py"
 ACCEPTANCE = ROOT / "docs/android-device-acceptance.md"
 README = ROOT / "README.md"
 
@@ -36,6 +43,7 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
         cls.publish = PUBLISH_WORKFLOW.read_text(encoding="utf-8")
         cls.harness = HARNESS.read_text(encoding="utf-8")
         cls.builder = MANIFEST_BUILDER.read_text(encoding="utf-8")
+        cls.verifier = MANIFEST_VERIFIER.read_text(encoding="utf-8")
         cls.acceptance = ACCEPTANCE.read_text(encoding="utf-8")
         cls.readme = README.read_text(encoding="utf-8")
 
@@ -48,6 +56,19 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
         self.assertLess(static_step, gradle_step)
         self.assertNotRegex(self.build, r"android_device_matrix\.py\s+(?:capture|record|gate)")
 
+    def test_current_main_job_ledger_contract_is_preserved_in_the_pr_tree(self):
+        for path in (JOB_LEDGER_SOURCE, JOB_LEDGER_DOC, JOB_LEDGER_CONTRACT, JOB_LEDGER_SOURCE_TEST):
+            with self.subTest(path=path):
+                self.assertTrue(path.is_file())
+        for required in (
+            "Job ledger contract regressions",
+            "python3 scripts/test_job_ledger_contract.py",
+            "Job ledger source contract regressions",
+            "python3 scripts/test_job_ledger_source.py",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.build)
+
     def test_build_creates_and_validates_exact_actions_artifact_identity(self):
         for required in (
             "Create Actions artifact identity receipt",
@@ -57,6 +78,9 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
             "build/deb/root/data/data/com.termux/files/usr/lib/hermes-agent/app/install-stamp.json",
             "build/payload/payload.json",
             "build/webui/ANDROID_WEBUI_REVISION",
+            "cp build/deb/meta.json dist/runtime-meta.json",
+            "cp build/deb/root/data/data/com.termux/files/usr/lib/hermes-agent/app/install-stamp.json dist/install-stamp.json",
+            "cp build/webui/ANDROID_WEBUI_REVISION dist/webui-revision.txt",
             "android/release-cert.sha256",
             "APP_VERSION_NAME: '0.1.2'",
             "APP_VERSION_CODE: ${{ github.run_number }}",
@@ -140,6 +164,97 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
             with self.assertRaisesRegex(matrix.HarnessError, "runtime SHA-256"):
                 artifact_builder.create_manifest(args)
 
+    def test_publish_verifier_rebinds_apk_runtime_payload_and_webui_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            apk = root / "hermes-android-test.apk"
+            apk.write_bytes(b"synthetic APK bytes")
+            runtime_meta = root / "runtime-meta.json"
+            runtime_meta.write_text(json.dumps({"version": "runtime-test", "sha256": "d" * 64}), encoding="utf-8")
+            install_stamp = root / "install-stamp.json"
+            install_stamp.write_text(json.dumps({"commit": "e" * 40}), encoding="utf-8")
+            webui = root / "webui-revision.txt"
+            webui.write_text("f" * 40, encoding="utf-8")
+            cert = root / "release-cert.sha256"
+            cert.write_text("b" * 64, encoding="utf-8")
+            payload_zip = root / "payload.zip"
+            payload_zip.write_bytes(b"synthetic payload zip")
+            payload_id = f"runtime-test-{'d' * 12}-webui-{matrix.sha256_file(payload_zip)[:16]}"
+            payload = {
+                "payload_id": payload_id,
+                "zip_bytes": payload_zip.stat().st_size,
+                "upstream": {
+                    "deb": {"version": "runtime-test", "sha256": "d" * 64},
+                    "stamp": {"commit": "e" * 40},
+                },
+            }
+            payload_manifest = root / "payload.json"
+            payload_manifest.write_text(json.dumps(payload), encoding="utf-8")
+            payload_artifact_manifest = root / "payload-artifact.json"
+            payload_artifact_manifest.write_bytes(payload_manifest.read_bytes())
+            artifact = matrix.build_artifact_manifest(
+                apk,
+                application_id="io.github.hkhaobin.hermeswebui",
+                version_name="0.1.2",
+                version_code=99,
+                signer_sha256="b" * 64,
+                build_run_id="12345",
+                head_sha="c" * 40,
+                runtime_version="runtime-test",
+                runtime_sha256="d" * 64,
+                runtime_source_commit="e" * 40,
+                payload_id=payload_id,
+                webui_revision="f" * 40,
+                repository="ExampleOwner/example-repo",
+            )
+            manifest = root / "artifact-manifest.json"
+            manifest.write_text(json.dumps(artifact), encoding="utf-8")
+            with patch.object(
+                artifact_verifier,
+                "read_apk_metadata",
+                return_value={"application_id": "io.github.hkhaobin.hermeswebui", "version_name": "0.1.2", "version_code": 99},
+            ):
+                verified = artifact_verifier.verify_manifest(
+                    manifest_path=manifest,
+                    apk_path=apk,
+                    payload_manifest_path=payload_manifest,
+                    payload_artifact_manifest_path=payload_artifact_manifest,
+                    payload_zip_path=payload_zip,
+                    runtime_meta_path=runtime_meta,
+                    install_stamp_path=install_stamp,
+                    webui_revision_path=webui,
+                    release_cert_path=cert,
+                    aapt_path=root / "aapt",
+                    signer_sha256="b" * 64,
+                    repository="ExampleOwner/example-repo",
+                    workflow="Build APK",
+                    artifact_name="apk",
+                    run_id="12345",
+                    head_sha="c" * 40,
+                )
+                self.assertEqual(verified["runtime"]["payload_id"], payload_id)
+                artifact["apk"]["version_code"] = 100
+                manifest.write_text(json.dumps(artifact), encoding="utf-8")
+                with self.assertRaisesRegex(matrix.HarnessError, "apk.version_code"):
+                    artifact_verifier.verify_manifest(
+                        manifest_path=manifest,
+                        apk_path=apk,
+                        payload_manifest_path=payload_manifest,
+                        payload_artifact_manifest_path=payload_artifact_manifest,
+                        payload_zip_path=payload_zip,
+                        runtime_meta_path=runtime_meta,
+                        install_stamp_path=install_stamp,
+                        webui_revision_path=webui,
+                        release_cert_path=cert,
+                        aapt_path=root / "aapt",
+                        signer_sha256="b" * 64,
+                        repository="ExampleOwner/example-repo",
+                        workflow="Build APK",
+                        artifact_name="apk",
+                        run_id="12345",
+                        head_sha="c" * 40,
+                    )
+
     def test_publish_requires_the_same_actions_identity_and_releases_manifest(self):
         for required in (
             'run=$(gh api "repos/$GH_REPO/actions/runs/$RUN_ID")',
@@ -155,6 +270,32 @@ class AndroidIntegrationPreparationTests(unittest.TestCase):
             'and .state=="uploaded"'):
             with self.subTest(required=required):
                 self.assertIn(required, self.publish)
+
+    def test_publish_rebinds_every_manifest_component_to_downloaded_inputs(self):
+        for required in (
+            "scripts/verify_android_artifact_manifest.py",
+            'gh run download "$RUN_ID" --name payload --dir payload-artifact',
+            "--payload-manifest payload.json",
+            "--payload-artifact-manifest ../payload-artifact/payload.json",
+            "--payload-zip ../payload-artifact/payload.zip",
+            "--runtime-meta runtime-meta.json",
+            "--install-stamp install-stamp.json",
+            "--webui-revision-file webui-revision.txt",
+            '--signer-sha256 "$signer"',
+            '--aapt "$aapt"',
+            'apk_manifest["sha256"]',
+            'apk_manifest["size_bytes"]',
+            'for field in ("application_id", "version_name", "version_code")',
+            'apk_manifest[field]',
+            'apk_manifest["signer_sha256"]',
+            'runtime["version"]',
+            'runtime["sha256"]',
+            'runtime["source_commit"]',
+            'runtime["payload_id"]',
+            '["webui_revision"]',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, self.publish + self.builder + self.verifier)
 
     def test_staging_pr_seams_are_explicit_and_do_not_claim_hardware_results(self):
         for required in (

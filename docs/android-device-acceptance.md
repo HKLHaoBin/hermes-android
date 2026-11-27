@@ -22,6 +22,7 @@ The harness records and gates:
 - exact Hermes runtime version/SHA/source commit/payload ID and WebUI revision;
 - one identical artifact identity across every required device receipt;
 - per-test status, observation, failure class, evidence paths and evidence hashes;
+- fixed per-test expected state, allowed evidence kinds and exact installed-APK identity;
 - redaction state and release-gate eligibility.
 
 The harness does not:
@@ -83,7 +84,7 @@ Device identity includes:
 - `is_emulator=false` and a physical `transport` (`usb` or `tcpip`);
 - WebView package, exact version and provider;
 - display width/height/density, default IME, TalkBack state;
-- battery optimization/OEM policy, notification permission and controlled backend ID.
+- known battery optimization/OEM policy, known notification permission and controlled backend ID. Unknown values block capture and release eligibility.
 
 Artifact identity includes:
 
@@ -132,7 +133,7 @@ The staging branch `integration/issue-1-all-prs` contains the Android integratio
 | PR #3 job-ledger contract | `scripts/test_job_ledger_contract.py` checks documented fields, timestamps and transitions. | `RD-JOB-01` must run an actual integrated Agent job; `RD-JOB-02` must show recovery/retry/notification behavior after the integrated runtime wiring exists. |
 | PR #4 job-ledger storage | `scripts/test_job_ledger_source.py` checks SQLite schema, profile isolation and revision-guarded transitions. | `RD-BG-*` and `RD-JOB-*` evidence must read back durable state through the app/service path on a real device; source checks alone never create a receipt. |
 
-The Build APK workflow writes `dist/artifact-manifest.json` only after APK signature verification. It binds the exact APK filename/SHA-256/signing identity to the Actions repository, workflow, `apk` artifact name, run ID and head SHA, plus the runtime package metadata, install-stamp source commit, payload ID and pinned WebUI revision. The same `apk` Actions artifact contains the APK, its `.sha256` sidecar, release certificate and this manifest. Publish verified APK downloads that artifact by run ID, rechecks the identity and retains `artifact-manifest.json` as a release asset.
+The Build APK workflow writes `dist/artifact-manifest.json` only after APK signature verification. It also archives the exact runtime metadata, install stamp and WebUI revision beside the APK. It binds the exact APK filename/SHA-256/size/application/version/signer identity to the Actions repository, workflow, `apk` artifact name, run ID and head SHA, plus the runtime package metadata, install-stamp source commit, payload ID and pinned WebUI revision. The same `apk` Actions artifact contains the APK, its `.sha256` sidecar, release certificate, payload manifest and these provenance sidecars; the separate `payload` artifact supplies the payload ZIP and manifest. Publish verified APK downloads both artifacts, parses the downloaded APK metadata, re-hashes the APK/payload, and rechecks every manifest field before retaining `artifact-manifest.json` as a release asset.
 
 The manifest is an Actions artifact identity receipt, not a device receipt. A future authorized hardware workflow may download the `apk` artifact, validate the manifest, install and exercise that exact APK outside this static workflow, then archive one receipt directory per capability slot and run `gate`. Build CI and publish CI do not call `capture`, `record` or `gate`, do not connect to ADB, and produce no real-device result. Without an authorized online device, capture must remain `BLOCKED` with exit code `2` and write no receipt; planned but unexecuted scenarios remain `NOT RUN`.
 
@@ -176,11 +177,13 @@ python3 scripts/android_device_matrix.py record \
   --status PASS \
   --observed <short-observed-state> \
   --reason <why-this-status-is-supported> \
+  --evidence-kind <contract-kind> \
+  --evidence-kind <second-contract-kind> \
   --evidence receipts/<slot-id>/status.json \
   --evidence receipts/<slot-id>/screen.png
 ```
 
-Every test record requires a non-empty `--reason`; for `FAIL` or `BLOCKED`, also provide `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite. Evidence paths are relative in the receipt, re-hashed, and content-scanned by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence or whose evidence contains credentials.
+Every test record requires the harness-owned `expected` contract, a non-empty `--reason`, and an `installed_apk` object that exactly equals `receipt.artifact.apk`. Evidence kinds are checked against the fixed contract for that test; pass them explicitly with one `--evidence-kind` per `--evidence` when the file suffix is not the semantic kind. For `FAIL` or `BLOCKED`, also provide `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite and no evidence. Evidence paths are relative in the receipt, re-hashed, and content-scanned by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence, is bound to a different APK, uses an unapproved evidence kind, or contains credentials.
 
 Validate one receipt:
 

@@ -139,13 +139,13 @@
           "additionalProperties": false,
           "required": ["optimization", "oem_policy"],
           "properties": {
-            "optimization": { "type": "string", "enum": ["optimized", "exempt", "unknown"] },
+            "optimization": { "type": "string", "enum": ["optimized", "exempt"] },
             "oem_policy": { "type": "string", "minLength": 1 }
           }
         },
         "notification_permission": {
           "type": "string",
-          "enum": ["allow", "deny", "default", "unknown"]
+          "enum": ["allow", "deny", "default"]
         },
         "network": {
           "type": "object",
@@ -235,7 +235,7 @@
     "test": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "status", "observed", "reason", "failure_class", "evidence", "redaction_checked"],
+      "required": ["id", "status", "expected", "observed", "reason", "failure_class", "installed_apk", "evidence", "redaction_checked"],
       "properties": {
         "id": {
           "type": "string",
@@ -249,11 +249,26 @@
           ]
         },
         "status": { "$ref": "#/$defs/status" },
+        "expected": { "type": "string", "minLength": 1 },
         "observed": { "type": "string" },
         "reason": { "type": "string", "minLength": 1 },
         "failure_class": {
           "type": ["string", "null"],
           "enum": ["app", "service", "job", "notification", "webview", "network", "oem", "artifact", "device", "operator", "unknown", null]
+        },
+        "installed_apk": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["filename", "sha256", "size_bytes", "application_id", "version_name", "version_code", "signer_sha256"],
+          "properties": {
+            "filename": { "type": "string", "minLength": 1 },
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "size_bytes": { "type": "integer", "minimum": 1 },
+            "application_id": { "type": "string", "minLength": 1 },
+            "version_name": { "type": "string", "minLength": 1 },
+            "version_code": { "type": "integer", "minimum": 1 },
+            "signer_sha256": { "$ref": "#/$defs/sha256" }
+          }
         },
         "evidence": {
           "type": "array",

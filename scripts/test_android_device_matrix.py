@@ -58,9 +58,11 @@ def receipt_fixture() -> dict:
         {
             "id": test_id,
             "status": "NOT RUN",
+            "expected": matrix.TEST_CONTRACT[test_id]["expected"],
             "observed": "",
             "reason": "Not executed: no authorized hardware run in this fixture.",
             "failure_class": None,
+            "installed_apk": copy.deepcopy(artifact_fixture()["apk"]),
             "evidence": [],
             "redaction_checked": True,
         }
@@ -98,15 +100,15 @@ def receipt_fixture() -> dict:
             },
             "display": {"width": 1080, "height": 2400, "density": 420},
             "input": {"ime": "test-only-ime", "talkback": False},
-            "battery": {"optimization": "unknown", "oem_policy": "test-only"},
-            "notification_permission": "unknown",
+            "battery": {"optimization": "optimized", "oem_policy": "test-only-policy"},
+            "notification_permission": "default",
             "network": {"mode": "controlled", "backend_id": "test-only"},
         },
         "artifact": artifact_fixture(),
         "preconditions": {
             "install_mode": "clean",
-            "notification_permission": "unknown",
-            "battery_optimization": "unknown",
+            "notification_permission": "default",
+            "battery_optimization": "optimized",
             "network_mode": "controlled",
             "screen_state": "unlocked",
             "backend_id": "test-only",
@@ -132,10 +134,12 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         for test in receipt["tests"]:
             test.update(
                 status="PASS",
+                expected=matrix.TEST_CONTRACT[test["id"]]["expected"],
                 observed="Expected state observed.",
                 reason="Expected state observed with clean evidence.",
                 failure_class=None,
-                evidence=[{"path": f"evidence/{test['id']}.log", "sha256": "a" * 64, "kind": "log"}],
+                installed_apk=copy.deepcopy(receipt["artifact"]["apk"]),
+                evidence=[{"path": f"evidence/{test['id']}.log", "sha256": "a" * 64, "kind": matrix.TEST_CONTRACT[test["id"]]["evidence_kinds"][0]}],
                 started_at="2026-11-26T00:00:00Z",
                 finished_at="2026-11-26T00:01:00Z",
             )
@@ -151,7 +155,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             test["evidence"] = [{
                 "path": evidence_path.name,
                 "sha256": hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
-                "kind": "log",
+                "kind": matrix.TEST_CONTRACT[test["id"]]["evidence_kinds"][0],
             }]
         return receipt
 
@@ -163,6 +167,10 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         self.assertIn("is_emulator", schema["$defs"]["device"]["required"])
         self.assertIn("transport", schema["$defs"]["device"]["required"])
         self.assertIn("artifact_name", schema["$defs"]["artifact"]["properties"]["build"]["required"])
+        self.assertIn("expected", schema["$defs"]["test"]["required"])
+        self.assertIn("installed_apk", schema["$defs"]["test"]["required"])
+        self.assertNotIn("unknown", schema["$defs"]["device"]["properties"]["battery"]["properties"]["optimization"]["enum"])
+        self.assertNotIn("unknown", schema["$defs"]["device"]["properties"]["notification_permission"]["enum"])
         self.assertEqual(schema["$defs"]["test"]["properties"]["reason"]["minLength"], 1)
         self.assertEqual(schema["$defs"]["redaction"]["properties"]["raw_serial_stored"]["const"], False)
 
@@ -289,6 +297,51 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         receipt["undeclared"] = True
         self.assertTrue(any("undeclared" in error or "additional" in error for error in matrix.validate_receipt(receipt)))
 
+    def test_receipt_requires_expected_state_evidence_kind_and_exact_installed_apk(self):
+        receipt = self._pass_receipt()
+        self.assertTrue(hasattr(matrix, "TEST_CONTRACT"))
+        for test in receipt["tests"]:
+            contract = matrix.TEST_CONTRACT[test["id"]]
+            test["expected"] = contract["expected"]
+            test["installed_apk"] = copy.deepcopy(receipt["artifact"]["apk"])
+            test["evidence"][0]["kind"] = contract["evidence_kinds"][0]
+        self.assertEqual(matrix.validate_receipt(receipt), [])
+
+        receipt["tests"][0]["expected"] = "arbitrary operator expectation"
+        self.assertTrue(any("expected" in error for error in matrix.validate_receipt(receipt)))
+        receipt = self._pass_receipt()
+        for test in receipt["tests"]:
+            contract = matrix.TEST_CONTRACT[test["id"]]
+            test["expected"] = contract["expected"]
+            test["installed_apk"] = copy.deepcopy(receipt["artifact"]["apk"])
+            test["evidence"][0]["kind"] = contract["evidence_kinds"][0]
+        receipt["tests"][0]["evidence"][0]["kind"] = "arbitrary-text"
+        self.assertTrue(any("evidence" in error for error in matrix.validate_receipt(receipt)))
+        receipt["tests"][0]["evidence"][0]["kind"] = matrix.TEST_CONTRACT["RD-ID-01"]["evidence_kinds"][0]
+        receipt["tests"][0]["installed_apk"]["sha256"] = "0" * 64
+        self.assertTrue(any("installed_apk" in error or "artifact" in error for error in matrix.validate_receipt(receipt)))
+
+    def test_runtime_validator_matches_schema_types_transport_and_suffix_contract(self):
+        receipt = receipt_fixture()
+        receipt["device"]["display"]["width"] = True
+        self.assertTrue(any("display.width" in error for error in matrix.validate_receipt(receipt)))
+        receipt = receipt_fixture()
+        receipt["device"]["transport"] = "bluetooth"
+        self.assertTrue(any("transport" in error for error in matrix.validate_receipt(receipt)))
+        receipt = receipt_fixture()
+        receipt["device"]["serial_suffix"] = "123456789"
+        self.assertTrue(any("serial_suffix" in error for error in matrix.validate_receipt(receipt)))
+
+    def test_unknown_battery_notification_and_oem_preconditions_are_not_release_valid(self):
+        receipt = self._pass_receipt()
+        receipt["device"]["battery"]["optimization"] = "unknown"
+        receipt["device"]["battery"]["oem_policy"] = "unknown"
+        receipt["device"]["notification_permission"] = "unknown"
+        receipt["preconditions"]["battery_optimization"] = "unknown"
+        receipt["preconditions"]["notification_permission"] = "unknown"
+        errors = matrix.validate_receipt(receipt)
+        self.assertTrue(any("unknown" in error.lower() or "precondition" in error.lower() for error in errors))
+
     def test_artifact_manifest_requires_explicit_repository_provenance(self):
         with tempfile.TemporaryDirectory() as tmp:
             apk = Path(tmp) / "candidate.apk"
@@ -410,7 +463,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             status="PASS",
             observed="Observed expected state.",
             reason="",
-            evidence=[{"path": "evidence/status.json", "sha256": "a" * 64, "kind": "status"}],
+            evidence=[{"path": "evidence/status.json", "sha256": "a" * 64, "kind": "json"}],
             started_at="2026-11-26T00:00:00Z",
             finished_at="2026-11-26T00:01:00Z",
         )
@@ -434,7 +487,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             observed="Mismatch",
             reason="",
             failure_class=None,
-            evidence=[{"path": "evidence/status.json", "sha256": "a" * 64, "kind": "status"}],
+            evidence=[{"path": "evidence/status.json", "sha256": "a" * 64, "kind": "json"}],
             started_at="2026-11-26T00:00:00Z",
             finished_at="2026-11-26T00:01:00Z",
         )

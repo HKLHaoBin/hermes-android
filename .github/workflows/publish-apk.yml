@@ -27,6 +27,11 @@ jobs:
       TAG: ${{ inputs.tag }}
       GH_REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          persist-credentials: false
+
       - name: Verify build provenance and publish
         run: |
           [[ "$RUN_ID" =~ ^[0-9]+$ && "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
@@ -34,6 +39,7 @@ jobs:
           sha=$(jq -er --arg repo "$GH_REPO" 'select(.path == ".github/workflows/build-apk.yml" and .head_branch == "main" and .conclusion == "success" and .head_repository.full_name == $repo) | .head_sha' <<< "$run")
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           gh run download "$RUN_ID" --name apk --dir dist
+          gh run download "$RUN_ID" --name payload --dir payload-artifact
           cd dist
           [[ -f artifact-manifest.json ]]
           python3 - "$GH_REPO" "$RUN_ID" "$sha" <<'PY'
@@ -69,6 +75,24 @@ jobs:
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           signer=$("$apksigner" verify --print-certs "$apk" | awk '/certificate SHA-256 digest:/ {print tolower($NF)}' | sort -u)
           [[ "$signer" == "$expected" ]]
+          aapt=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          python3 ../scripts/verify_android_artifact_manifest.py \
+            --manifest artifact-manifest.json \
+            --apk "$apk" \
+            --payload-manifest payload.json \
+            --payload-artifact-manifest ../payload-artifact/payload.json \
+            --payload-zip ../payload-artifact/payload.zip \
+            --runtime-meta runtime-meta.json \
+            --install-stamp install-stamp.json \
+            --webui-revision-file webui-revision.txt \
+            --release-cert-file release-cert.sha256 \
+            --aapt "$aapt" \
+            --signer-sha256 "$signer" \
+            --repository "$GH_REPO" \
+            --workflow "Build APK" \
+            --artifact-name apk \
+            --run-id "$RUN_ID" \
+            --head-sha "$sha"
           mv "$apk" Hermes-Android.apk
           sha256sum Hermes-Android.apk > Hermes-Android.apk.sha256
           if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
