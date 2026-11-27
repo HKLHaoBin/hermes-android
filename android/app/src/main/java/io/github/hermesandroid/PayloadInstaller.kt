@@ -55,44 +55,52 @@ class PayloadInstaller(private val context: Context) {
 
     fun previousGoodSlotId(): String? = readState().optStringOrNull("previous_good")
 
+    fun rejectedPayloadId(): String? = readState().optStringOrNull("rejected")
+
     fun activationPending(): Boolean = readState().optBoolean("pending", false)
 
     fun activationState(): JSONObject = readState()
+
+    fun pruneStaleSlots() = pruneSlots()
 
     fun needsInstall(manifest: JSONObject): Boolean {
         val id = manifest.getString("payload_id")
         return installedId() != id || !File(root, manifest.getJSONObject("launcher").getString("python")).exists()
     }
 
-    /** Recover an activation interrupted before the candidate became healthy. */
-    fun recoverPending(): Recovery {
-        val state = readState()
-        if (!state.optBoolean("pending", false)) return Recovery(false, null)
-        val previous = state.optStringOrNull("previous_good")
-        val failed = state.optStringOrNull("active")
-        val restored = previous?.takeIf { slotDir(it).isDirectory }
-        if (restored == null) {
-            failed?.let { FileTools.deleteTree(slotDir(it)) }
-            writeState(null, null, pending = false, generation = state.optLong("generation", 0L) + 1L)
-        } else {
-            writeState(restored, failed, pending = false, generation = state.optLong("generation", 0L) + 1L)
+    /** A rejected APK keeps using its installed fallback, never its bundled ZIP. */
+    fun selectedManifest(included: JSONObject): JSONObject {
+        if (rejectedPayloadId() != included.getString("payload_id")) return included
+        val restored = installedManifest() ?: throw IOException("没有可用的 previous-good manifest")
+        if (restored.optString("payload_id") != activeSlotId() || needsInstall(restored)) {
+            throw IOException("previous-good 运行环境不完整，拒绝用新 APK 的 ZIP 修补旧 slot")
         }
-        return Recovery(true, restored)
+        return restored
     }
 
-    /** Roll back a candidate that failed extraction/startup/migration. */
-    fun rollback(): String? {
+    /** Recover an activation interrupted before the candidate became healthy. */
+    fun recoverPending(beforeDiscard: (String) -> Unit): Recovery {
+        if (!activationPending()) return Recovery(false, null)
+        return Recovery(true, rollback(beforeDiscard))
+    }
+
+    /** Quiescence must succeed before state changes or failed-slot deletion. */
+    fun rollback(beforeDiscard: (String) -> Unit): String? {
         val state = readState()
         if (!state.optBoolean("pending", false)) return activeSlotId()
         val previous = state.optStringOrNull("previous_good")
         val failed = state.optStringOrNull("active")
-        val restored = previous?.takeIf { slotDir(it).isDirectory }
-        if (restored == null) {
-            failed?.let { FileTools.deleteTree(slotDir(it)) }
-            writeState(null, null, pending = false, generation = state.optLong("generation", 0L) + 1L)
-        } else {
-            writeState(restored, failed, pending = false, generation = state.optLong("generation", 0L) + 1L)
-        }
+        val restored = previous?.takeIf { it != failed && slotDir(it).isDirectory }
+        failed?.let { beforeDiscard(slotDir(it).absolutePath) }
+        writeState(
+            restored,
+            null,
+            pending = false,
+            generation = state.optLong("generation", 0L) + 1L,
+            rejected = failed,
+        )
+        failed?.takeIf { it != restored }?.let { FileTools.deleteTree(slotDir(it)) }
+        pruneSlots()
         return restored
     }
 
@@ -105,17 +113,21 @@ class PayloadInstaller(private val context: Context) {
                 state.optStringOrNull("previous_good"),
                 pending = false,
                 generation = state.optLong("generation", 0L),
+                rejected = null,
             )
         }
+        pruneSlots()
     }
 
     /** Blocking; call from a worker thread. [progress] gets 0..1 and a short label. */
     fun install(manifest: JSONObject, progress: (Float, String) -> Unit) {
-        ensureLegacySlot()
-        verifyAssetDigest(manifest)
         val payloadId = manifest.getString("payload_id")
         validateSlotId(payloadId)
+        if (payloadId == rejectedPayloadId()) throw IOException("refusing rejected payload: $payloadId")
+        ensureLegacySlot()
+        verifyAssetDigest(manifest)
         slotsDir.mkdirs()
+        pruneSlots()
         val candidate = slotDir(payloadId)
         val current = activeSlotId()
         val previous = previousGoodSlotId()
@@ -222,7 +234,7 @@ class PayloadInstaller(private val context: Context) {
     private fun activateExisting(payloadId: String, current: String?) {
         val state = readState()
         val previous = current?.takeIf { it != payloadId } ?: state.optStringOrNull("previous_good")?.takeIf { it != payloadId }
-        writeState(payloadId, previous, pending = true, generation = state.optLong("generation", 0L) + 1L)
+        writeState(payloadId, previous, pending = true, generation = state.optLong("generation", 0L) + 1L, rejected = null)
     }
 
     private fun ensureLegacySlot() {
@@ -254,19 +266,32 @@ class PayloadInstaller(private val context: Context) {
             if (!file.isFile) continue
             try {
                 val value = JSONObject(file.readText())
+                if (value.getInt("format") != 1 || value.getLong("generation") < 0L ||
+                    value.get("pending") !is Boolean || !value.has("active") || !value.has("previous_good")) {
+                    throw IOException("invalid payload state")
+                }
                 value.optStringOrNull("active")?.let(::validateSlotId)
                 value.optStringOrNull("previous_good")?.let(::validateSlotId)
+                value.optStringOrNull("rejected")?.let(::validateSlotId)
                 return value
             } catch (_: Throwable) {
                 // Try the backup state before declaring no active slot.
             }
         }
+        if (candidates.any { it.exists() }) throw IOException("无法读取运行环境状态，拒绝删除或覆盖已有 slot")
         return JSONObject().put("format", 1).put("generation", 0).put("pending", false)
     }
 
-    private fun writeState(active: String?, previousGood: String?, pending: Boolean, generation: Long) {
+    private fun writeState(
+        active: String?,
+        previousGood: String?,
+        pending: Boolean,
+        generation: Long,
+        rejected: String? = null,
+    ) {
         active?.let(::validateSlotId)
         previousGood?.let(::validateSlotId)
+        rejected?.let(::validateSlotId)
         filesDir.mkdirs()
         val value = JSONObject().apply {
             put("format", 1)
@@ -274,6 +299,7 @@ class PayloadInstaller(private val context: Context) {
             put("active", active ?: JSONObject.NULL)
             put("previous_good", previousGood ?: JSONObject.NULL)
             put("pending", pending)
+            put("rejected", rejected ?: JSONObject.NULL)
         }
         val temp = File(filesDir, "hermes-agent.active.json.tmp")
         FileOutputStream(temp).use { output ->
@@ -282,6 +308,18 @@ class PayloadInstaller(private val context: Context) {
         }
         if (stateFile.isFile) stateFile.copyTo(stateBackup, overwrite = true)
         if (!temp.renameTo(stateFile)) throw IOException("无法原子写入运行环境状态")
+    }
+
+    /** Keep only the active and previous-good slots; remove failed/stale candidates. */
+    private fun pruneSlots() {
+        val state = readState()
+        val keep = setOfNotNull(state.optStringOrNull("active"), state.optStringOrNull("previous_good"))
+        slotsDir.listFiles()?.forEach { child ->
+            if (child.name !in keep) {
+                FileTools.deleteTree(child)
+                if (FileTools.exists(child)) throw IOException("无法清理旧运行环境 slot：${child.name}")
+            }
+        }
     }
 
     private fun verifyAssetDigest(manifest: JSONObject) {

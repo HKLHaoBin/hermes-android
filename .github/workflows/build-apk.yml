@@ -52,16 +52,12 @@ jobs:
             scripts.test_manifest_identity \
             scripts.test_issue7_source_contract \
             scripts.test_issue7_static \
-            scripts.test_issue7_integration_contract
+            scripts.test_issue7_standalone_contract \
+            scripts.test_issue7_review_regressions \
+            scripts.test_issue7_parent_gate
 
-      - name: Parent Issue #1 integration contracts when present
-        run: |
-          for test in \
-            scripts/test_capabilities.py \
-            scripts/test_job_ledger_contract.py \
-            scripts/test_job_ledger_source.py; do
-            if [[ -f "$test" ]]; then python3 "$test"; fi
-          done
+      - name: Fail-closed parent Issue #1 integration contracts
+        run: python3 scripts/issue7_integration_gate.py
 
       - name: Free disk space
         run: |
@@ -266,7 +262,7 @@ jobs:
             --receipt dist/update-receipt.json \
             --key "$PRIVATE_KEY" \
             --out dist/update-receipt.sig
-          sha256sum dist/update-receipt.json > dist/update-receipt.json.sha256
+          (cd dist && sha256sum update-receipt.json > update-receipt.json.sha256)
 
       - uses: actions/upload-artifact@v5
         with:

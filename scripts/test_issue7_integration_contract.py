@@ -1,9 +1,6 @@
 """Integration-prep contract for Issue #7 against parent Issue #1 PR surfaces.
 
-The test is additive: on this standalone branch the parent files are absent, so
-only Issue #7 contracts run. After PR #2/#3/#4 are merged, the optional checks
-become active and prevent the update identity/rollback work from dropping
-capability or JobLedger contracts.
+The test is strict when run against an integration checkout: the parent capability and JobLedger surfaces must both exist, and their source/workflow contracts must pass. The standalone contributor checkout uses `scripts/test_issue7_standalone_contract.py`; a partial parent surface is never treated as a skip.
 """
 from pathlib import Path
 import os
@@ -18,11 +15,23 @@ def source(relative: str) -> str:
 
 
 class Issue7IntegrationContractTests(unittest.TestCase):
+    def test_parent_contract_files_are_required(self):
+        for relative in (
+            "scripts/test_capabilities.py",
+            "android/app/src/main/java/io/github/hermesandroid/JobLedger.kt",
+            "scripts/test_job_ledger_contract.py",
+            "scripts/test_job_ledger_source.py",
+        ):
+            with self.subTest(relative=relative):
+                self.assertTrue((ROOT / relative).is_file(), f"Missing parent contract: {relative}")
+
     def test_issue7_identity_and_slot_contract_is_present(self):
         runtime = source("android/app/src/main/java/io/github/hermesandroid/HermesRuntime.kt")
         installer = source("android/app/src/main/java/io/github/hermesandroid/PayloadInstaller.kt")
         workflow = source(".github/workflows/build-apk.yml")
-        compatibility = source("compatibility.json")
+        compatibility_path = ROOT / "compatibility.json"
+        self.assertTrue(compatibility_path.is_file(), "Issue #7 compatibility matrix is missing")
+        compatibility = compatibility_path.read_text(encoding="utf-8")
         for needle in ('"runtime_slots": "files/hermes-agent-slots"', '"database": "databases/hermes_jobs.db"'):
             self.assertIn(needle, compatibility)
         for needle in ("runtimeVersion", "webuiCommit", "compatibilityStatus", "previousGoodSlot"):
@@ -34,8 +43,7 @@ class Issue7IntegrationContractTests(unittest.TestCase):
 
     def test_capability_surface_is_preserved_when_parent_pr2_is_present(self):
         capability_test = ROOT / "scripts/test_capabilities.py"
-        if not capability_test.is_file():
-            self.skipTest("parent PR #2 capability contract is not in this checkout")
+        self.assertTrue(capability_test.is_file(), "parent PR #2 capability contract is missing")
         runtime = source("android/app/src/main/java/io/github/hermesandroid/HermesRuntime.kt")
         index = source("android/app/src/main/assets/ui/index.html")
         app = source("android/app/src/main/assets/ui/app.js")
@@ -48,8 +56,7 @@ class Issue7IntegrationContractTests(unittest.TestCase):
 
     def test_job_ledger_surface_is_preserved_when_parent_pr3_pr4_is_present(self):
         ledger_path = ROOT / "android/app/src/main/java/io/github/hermesandroid/JobLedger.kt"
-        if not ledger_path.is_file():
-            self.skipTest("parent JobLedger contract is not in this checkout")
+        self.assertTrue(ledger_path.is_file(), "parent JobLedger surface is missing")
         ledger = ledger_path.read_text(encoding="utf-8")
         workflow = source(".github/workflows/build-apk.yml")
         for needle in ("expectedUpdatedAt", "updated_at = ?", "runtime_id TEXT", "profile_id TEXT"):

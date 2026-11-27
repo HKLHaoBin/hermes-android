@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -83,30 +84,30 @@ class HermesService : Service() {
     private fun runRuntime() {
         val installer = PayloadInstaller(this)
         var readyFile: File? = null
-        var recovery = PayloadInstaller.Recovery(false, null)
+        var attemptedRoot: String? = null
+        var pump: Thread? = null
         try {
-            recovery = installer.recoverPending()
+            attemptedRoot = installer.root.absolutePath
+            val recovery = installer.recoverPending(::quiescePayload)
+            attemptedRoot = installer.root.absolutePath
             if (!installer.hasPayload()) {
-                fail("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
-                return
+                throw IOException("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
             }
             val includedManifest = installer.manifest()
+            val manifest = installer.selectedManifest(includedManifest)
+            val usingFallback = manifest.getString("payload_id") != includedManifest.getString("payload_id")
+            val updateError = if (usingFallback) "payload-startup-rollback" else ""
             if (recovery.hadPendingActivation && recovery.restoredPayloadId != null) {
-                val restoredManifest = installer.installedManifest() ?: includedManifest
-                applyManifestIdentity(installer, restoredManifest, "payload-startup-rollback")
-                fail(
-                    "上次运行环境未通过启动检查，已回滚到 ${recovery.restoredPayloadId}",
-                    updateError = "payload-startup-rollback",
-                )
-                return
+                log("上次运行环境未通过启动检查，改用 previous-good：${recovery.restoredPayloadId}")
+            } else if (usingFallback) {
+                log("跳过已拒绝的 APK payload，继续使用 previous-good")
             }
-            val manifest = includedManifest
             val payloadId = manifest.getString("payload_id")
-            applyManifestIdentity(installer, manifest)
-            HermesRuntime.update { it.copy(payloadId = payloadId, exitCode = null, updateError = "") }
+            applyManifestIdentity(installer, manifest, updateError)
+            HermesRuntime.update { it.copy(exitCode = null) }
 
-            val swept = ProcUtil.sweep(installer.root.absolutePath)
-            if (swept > 0) log("清理了 $swept 个残留进程")
+            quiescePayload(installer.root.absolutePath)
+            installer.pruneStaleSlots()
 
             if (installer.needsInstall(manifest)) {
                 val payloadBytes = manifest.optLong("total_bytes", 0L).coerceAtLeast(0L)
@@ -120,7 +121,8 @@ class HermesService : Service() {
                 installer.install(manifest) { p, label ->
                     HermesRuntime.update { it.copy(progress = p, message = label) }
                 }
-                applyManifestIdentity(installer, manifest)
+                attemptedRoot = installer.root.absolutePath
+                applyManifestIdentity(installer, manifest, updateError)
                 log("运行环境已安装：$payloadId")
             }
             if (stopping) return
@@ -158,33 +160,21 @@ class HermesService : Service() {
             process = proc
             pid = ProcUtil.findChild(cmd[0]) ?: 0
             HermesRuntime.update { it.copy(pid = pid) }
-            val pump = thread(name = "hermes-log") { pumpLog(proc) }
+            pump = thread(name = "hermes-log") { pumpLog(proc) }
 
             if (waitHealthy(port, proc, ready)) {
                 val cookie = ready.readText()
                 ready.delete()
                 installer.markHealthy()
-                applyManifestIdentity(installer, manifest)
+                applyManifestIdentity(installer, manifest, updateError)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
                 log("Hermes 已就绪：http://127.0.0.1:$port")
-            } else if (!stopping && proc.isAliveCompat()) {
-                proc.destroy()
+            } else {
+                throw IOException("运行环境未通过启动健康检查")
             }
             val code = proc.waitFor()
-            pump.join(2000)
-            if (!stopping && installer.activationPending()) {
-                val restored = installer.rollback()
-                applyManifestIdentity(installer, installer.installedManifest() ?: manifest, "payload-startup-rollback")
-                fail(
-                    "新运行环境启动失败，已回滚到 ${restored ?: "空白状态"}",
-                    code,
-                    updateError = "payload-startup-rollback",
-                )
-                process = null
-                pid = 0
-                return
-            }
-            process = null
+            stopOwnedProcess(attemptedRoot)
+            pump?.join(2000)
             if (stopping) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", exitCode = code, pid = 0) }
             } else {
@@ -210,9 +200,26 @@ class HermesService : Service() {
             }
         } catch (t: Throwable) {
             log("错误：${t}")
-            if (runCatching { installer.activationPending() }.getOrDefault(false)) {
-                installer.rollback()
-                installer.installedManifest()?.let { applyManifestIdentity(installer, it, "payload-activation-rollback") }
+            try {
+                stopOwnedProcess(attemptedRoot)
+                pump?.join(2000)
+                if (stopping) return
+                if (installer.activationPending()) {
+                    val restored = installer.rollback(::quiescePayload)
+                    val restoredManifest = installer.installedManifest()
+                    applyManifestIdentity(installer, restoredManifest ?: org.json.JSONObject(), "payload-activation-rollback")
+                    if (!stopping && restored != null && restoredManifest != null) {
+                        log("运行环境激活失败，已回滚到 $restored，重新启动 previous-good")
+                        return runRuntime()
+                    }
+                } else {
+                    applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-activation-failed")
+                }
+            } catch (recoveryFailure: Throwable) {
+                // Do not activate another slot while quiescence or state durability is uncertain.
+                log("回滚未完成：${recoveryFailure}")
+                fail("运行环境清理或回滚未完成，请查看日志", updateError = "payload-recovery-failed")
+                return
             }
             fail(t.message ?: t.toString(), updateError = "payload-activation-failed")
         } finally {
@@ -254,6 +261,43 @@ class HermesService : Service() {
                 progress = -1f,
                 updateError = updateError.ifBlank { it.updateError },
             )
+        }
+    }
+
+    /** Stop the process before changing the slot it was executing from. */
+    private fun stopOwnedProcess(root: String?) {
+        val proc = process
+        val target = pid
+        var interrupted = Thread.interrupted()
+        try {
+            if (target > 0) ProcUtil.stopTree(target, graceMs = 0)
+            proc?.destroy()
+            root?.let { quiescePayload(it) }
+            while (true) {
+                try {
+                    proc?.waitFor()
+                    break
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                }
+            }
+            root?.let { quiescePayload(it) }
+            if (process === proc) process = null
+            if (pid == target) pid = 0
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+    }
+
+    /** Includes orphaned candidates after app death; failure prevents slot mutation. */
+    private fun quiescePayload(root: String) {
+        val owners = ProcUtil.list().filter { it.cmdline.contains(root) }
+        owners.forEach { ProcUtil.stopTree(it.pid, graceMs = 0) }
+        ProcUtil.sweep(root)
+        val deadline = android.os.SystemClock.elapsedRealtime() + 5000L
+        while (ProcUtil.list().any { it.cmdline.contains(root) }) {
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) throw IOException("payload process cleanup timed out")
+            Thread.sleep(50)
         }
     }
 

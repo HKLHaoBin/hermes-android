@@ -8,6 +8,31 @@ import unittest
 
 
 class UpdateReceiptCliTests(unittest.TestCase):
+    def test_workflow_receipt_checksum_survives_artifact_root_download(self):
+        root = Path(__file__).resolve().parents[1]
+        build = (root / ".github/workflows/build-apk.yml").read_text(encoding="utf-8")
+        publish = (root / ".github/workflows/publish-apk.yml").read_text(encoding="utf-8")
+        producers = [line.strip() for line in build.splitlines()
+                     if "sha256sum" in line and "update-receipt.json.sha256" in line]
+        consumers = [line.strip() for line in publish.splitlines()
+                     if "sha256sum --check" in line and "update-receipt.json.sha256" in line]
+        self.assertEqual(len(producers), 1)
+        self.assertEqual(len(consumers), 1)
+        bash = shutil.which("bash")
+        assert bash is not None, "bash is required for the workflow checksum contract"
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp)
+            dist = work / "dist"
+            dist.mkdir()
+            # A receipt fixture, not a built APK or a live release artifact.
+            (dist / "update-receipt.json").write_text('{"format":1}\n', encoding="utf-8")
+            subprocess.run([bash, "-ec", producers[0]], cwd=work, check=True, capture_output=True)
+            checked = subprocess.run([bash, "-ec", consumers[0]], cwd=dist, capture_output=True)
+            self.assertEqual(checked.returncode, 0, checked.stderr.decode("utf-8", errors="replace"))
+            checksum = (dist / "update-receipt.json.sha256").read_text(encoding="utf-8")
+            # GNU checksum files may carry a '*' binary-mode marker on Windows.
+            self.assertEqual(checksum.strip().split()[-1].removeprefix("*"), "update-receipt.json")
+
     def test_create_and_sign_cli_round_trip(self):
         openssl = shutil.which("openssl")
         if not openssl:

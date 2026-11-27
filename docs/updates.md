@@ -16,10 +16,12 @@ The Build APK workflow records the runtime version/source commit, WebUI channel/
 The app keeps executable payloads in app-private versioned slots:
 
 - `files/hermes-agent-slots/<payload-id>/` — immutable candidate/active slots.
-- `files/hermes-agent.active.json` — active slot, previous-good slot, generation and pending activation state.
+- `files/hermes-agent.active.json` — active slot, previous-good slot, generation, pending activation state and a rejected payload identity used to avoid immediately retrying a known-bad APK payload.
 - `files/home/` — Hermes profiles, workspace, sessions and drafts; never replaced by a payload update.
 - `files/logs/` — runtime logs.
 - `databases/hermes_jobs.db` and WebView storage — outside payload slots.
+
+Only the active and previous-good slots are retained after a healthy activation. Startup (including an ordinary no-update startup) and health completion prune older slots and abandoned staging directories, and pruning runs before the space check. The free-space budget is conservative additional headroom; the retained slots already consume space reflected in `usableSpace`. Cleanup failures are explicit errors, not a successful retention check.
 
 Activation sequence:
 
@@ -32,7 +34,13 @@ Activation sequence:
 7. Start Hermes and wait for the authenticated WebUI health probe.
 8. Mark the candidate healthy only after the probe succeeds.
 
-If extraction, activation, startup or migration fails, the pending candidate is removed or rolled back to `previous_good`. A process death before the health mark is recovered on the next service start. A failed first install has no previous-good slot and remains an explicit error; it does not fabricate a successful runtime.
+Verification/extraction failures before activation leave the existing active/fallback pointers intact. After activation, a startup or health-state-commit failure first stops, waits for, and sweeps the candidate's process tree; only then may rollback change state and delete its directory. The failed payload identity is stored as `rejected`, never as `previous_good`. A failed cleanup or rollback-state write stops recovery without launching another runtime.
+
+If a complete previous-good manifest/launcher exists, the same service worker starts that restored payload using its installed manifest. Subsequent starts of the same APK continue to select the restored slot; health checks of that slot do not clear the rejected APK identity. A different payload identity may be installed by a later APK. The app never repairs an old manifest with the new APK's ZIP. First-install failure, missing fallback metadata, or incomplete fallback files remain explicit errors.
+
+A process death before the health mark is recovered on the next service start. Recovery quiesces the failed slot's root before changing active state or deleting that slot, rather than sweeping only the restored root afterward. No user-data/database rollback is attempted.
+
+Local regressions include the portable state model (quarantine persistence, state-write failure, process-cleanup callback ordering, repeated-update retention) and method-scoped Kotlin source-order contracts. These are static/contract evidence only: they do not execute Kotlin or validate Android process cleanup, filesystem durability, APK installation or WebView behavior on a device.
 
 ## Receipt
 
