@@ -5,7 +5,12 @@
 # Pass 1 uses LD_LIBRARY_PATH like the app on arm64 phones; pass 2 relies on the
 # $ORIGIN RUNPATHs alone (what x86 devices with ARM translation get).
 S=/data/data/com.termux/files/home/sim
-R=$S/files/hermes-agent
+STATE=$S/files/hermes-agent.active.json
+SLOT=$(sed -n 's/.*"active":"\([^"]*\)".*/\1/p' "$STATE")
+case "$SLOT" in
+  ""|.|..|*/*|*\\*) echo "invalid active slot in state"; exit 1 ;;
+esac
+R=$S/files/hermes-agent-slots/$SLOT
 RC=0
 first() { read -r line; echo "$1 -> $line"; while read -r _; do :; done; }
 dump() { while IFS= read -r line; do echo "$line"; done < "$1"; }

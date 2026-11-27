@@ -36,6 +36,8 @@ import sys
 import zipfile
 from pathlib import Path, PurePosixPath
 
+from payload_identity import build_pair_identity, build_payload_id, sha256_file, sha256_files, sha256_tree
+
 TERMUX_PREFIX = "/data/data/com.termux/files/usr"
 PAYLOAD_IN_PREFIX = "lib/hermes-agent"
 ROOT_PH = "@@HERMES_ROOT@@"
@@ -316,6 +318,10 @@ def main() -> int:
     ap.add_argument("--deb-root", type=Path, required=True)
     ap.add_argument("--web-dist", type=Path, default=None)
     ap.add_argument("--webui", type=Path, default=None)
+    ap.add_argument("--webui-identity", type=Path, default=None,
+                    help="resolved immutable WebUI channel/tag/commit JSON")
+    ap.add_argument("--compatibility", type=Path, default=None,
+                    help="non-secret Android/runtime/WebUI compatibility JSON")
     ap.add_argument("--meta", type=Path, default=None)
     ap.add_argument("--drop", action="append", default=[],
                     help="payload-relative path to leave out (repeatable)")
@@ -388,9 +394,40 @@ def main() -> int:
 
     zip_path = out / "payload.zip"
     files, total = write_zip(stage, zip_path)
+    webui_identity = json.loads(args.webui_identity.read_text(encoding="utf-8")) if args.webui_identity else {}
+    if args.webui:
+        webui_identity = dict(webui_identity)
+        patch_inputs = [
+            Path(__file__),
+            Path(__file__).with_name("android_runtime_fixes.py"),
+            Path(__file__).with_name("android_webui.py"),
+            Path(__file__).with_name("stage_android_terminal.py"),
+            Path(__file__).with_name("stage_android_import.py"),
+            Path(__file__).with_name("android_import.js"),
+            Path(__file__).with_name("android_import_chat.js"),
+            Path(__file__).with_name("android_import_api.py"),
+        ]
+        webui_identity["android_patch_set"] = sha256_files([path for path in patch_inputs if path.is_file()])
+    compatibility = json.loads(args.compatibility.read_text(encoding="utf-8")) if args.compatibility else {
+        "contract": "android-hermes-runtime-webui-v1",
+        "status": "unknown",
+    }
+    staged_webui_sha256 = sha256_tree(stage / "webui") if args.webui else None
+    zip_sha256 = sha256_file(zip_path)
+    pair_identity = build_pair_identity(
+        meta,
+        stamp,
+        webui_identity,
+        compatibility,
+        zip_sha256,
+        staged_webui_sha256,
+    )
     manifest = {
-        "format": 1,
+        "format": 2,
         "upstream": {"deb": meta, "stamp": {k: stamp.get(k) for k in ("commit", "base_version", "display_version")}},
+        "runtime": pair_identity["runtime"],
+        "webui": pair_identity["webui"],
+        "compatibility": compatibility,
         "placeholders": {"root": ROOT_PH, "prefix": PREFIX_PH, "prefix_dir": "prefix"},
         "launcher": launcher,
         "ld_library_path": ld,
@@ -406,12 +443,14 @@ def main() -> int:
         "file_count": files,
         "total_bytes": total,
         "zip_bytes": zip_path.stat().st_size,
+        "payload": {
+            "zip_sha256": zip_sha256,
+            "file_count": files,
+            "total_bytes": total,
+            "zip_bytes": zip_path.stat().st_size,
+        },
     }
-    manifest["payload_id"] = f"{meta.get('version', 'dev')}-{meta.get('sha256', '')[:12]}"
-    if args.webui:
-        import hashlib
-        with zip_path.open('rb') as stream:
-            manifest["payload_id"] += "-webui-" + hashlib.file_digest(stream, 'sha256').hexdigest()[:16]
+    manifest["payload_id"] = build_payload_id(pair_identity)
     (out / "payload.json").write_text(json.dumps(manifest, indent=1) + "\n", encoding="utf-8")
 
     log(f"{files} files, {total / 1e6:.1f} MB -> payload.zip {manifest['zip_bytes'] / 1e6:.1f} MB")

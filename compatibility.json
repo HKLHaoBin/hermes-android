@@ -1,0 +1,16 @@
+{
+  "contract": "android-hermes-runtime-webui-v1",
+  "status": "verified",
+  "min_android_api": 24,
+  "abis": ["arm64-v8a"],
+  "required_webview_features": ["WEB_MESSAGE_LISTENER"],
+  "optional_webview_features": ["DOCUMENT_START_SCRIPT"],
+  "data_roots": {
+    "runtime_slots": "files/hermes-agent-slots",
+    "runtime_state": "files/hermes-agent.active.json",
+    "home": "files/home",
+    "logs": "files/logs",
+    "database": "databases/hermes_jobs.db",
+    "webview": "app_webview"
+  }
+}

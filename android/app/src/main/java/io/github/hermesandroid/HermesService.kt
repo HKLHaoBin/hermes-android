@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.ServerSocket
@@ -28,10 +29,24 @@ import kotlin.concurrent.thread
  */
 class HermesService : Service() {
 
+    private enum class Command { START, AUTO_RESTART, STOP, RESTART, DESTROY }
+    private data class ProcessOwner(val process: java.lang.Process, val pid: Int, val root: String, val generation: Long)
+
+    private val lifecycleLock = Any()
     private var worker: Thread? = null
     @Volatile private var process: java.lang.Process? = null
+    @Volatile private var processOwner: ProcessOwner? = null
     @Volatile private var pid: Int = 0
     @Volatile private var stopping = false
+    private var commandGeneration = 0L
+    private var activeTeardownGeneration = 0L
+    private var teardownStartId = 0
+    private var teardownInProgress = false
+    private var pendingStart = false
+    private var pendingRestart = false
+    private var latestCommand = Command.START
+    private var autoRestartOwnerGeneration: Long? = null
+    private var autoRestartOwner: Thread? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private val crashTimes = java.util.concurrent.CopyOnWriteArrayList<Long>()
 
@@ -39,29 +54,50 @@ class HermesService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, notification())
-        when (intent?.action) {
-            ACTION_STOP -> {
-                thread(name = "hermes-stop") {
-                    stopRuntime()
-                    stopForegroundCompat()
-                    stopSelf()
+        val action = intent?.action ?: ACTION_START
+        synchronized(lifecycleLock) {
+            when (action) {
+                ACTION_STOP -> {
+                    clearAutoRestartLocked()
+                    latestCommand = Command.STOP
+                    commandGeneration += 1L
+                    requestTeardownLocked(startId, restart = false)
                 }
-                return START_NOT_STICKY
+                ACTION_RESTART -> {
+                    clearAutoRestartLocked()
+                    latestCommand = Command.RESTART
+                    commandGeneration += 1L
+                    requestTeardownLocked(startId, restart = true)
+                }
+                else -> {
+                    if (stopping || teardownInProgress) {
+                        clearAutoRestartLocked()
+                        latestCommand = Command.START
+                        commandGeneration += 1L
+                        pendingStart = true
+                        activeTeardownGeneration = commandGeneration
+                    } else if (worker?.isAlive != true) {
+                        clearAutoRestartLocked()
+                        latestCommand = Command.START
+                        commandGeneration += 1L
+                        launchLocked()
+                    }
+                }
             }
-            ACTION_RESTART -> thread(name = "hermes-restart") {
-                stopRuntime()
-                worker?.join()
-                crashTimes.clear()
-                launch()
-            }
-            else -> launch()
         }
-        return START_STICKY
+        return if (action == ACTION_STOP) START_NOT_STICKY else START_STICKY
     }
 
     override fun onDestroy() {
         HermesRuntime.removeListener(notifier)
-        thread(name = "hermes-destroy") { stopRuntime() }
+        synchronized(lifecycleLock) {
+            clearAutoRestartLocked()
+            latestCommand = Command.DESTROY
+            commandGeneration += 1L
+            pendingStart = false
+            pendingRestart = false
+            requestTeardownLocked(0, restart = false, stopSelfWhenDone = false)
+        }
         releaseWakeLock()
         super.onDestroy()
     }
@@ -73,42 +109,192 @@ class HermesService : Service() {
         HermesRuntime.addListener(notifier)
     }
 
-    @Synchronized
-    private fun launch() {
+    private fun launchLocked() {
         if (worker?.isAlive == true) return
         stopping = false
-        worker = thread(name = "hermes-runtime") { runRuntime() }
+        val generation = commandGeneration
+        worker = thread(name = "hermes-runtime") { runRuntime(generation) }
     }
 
-    private fun runRuntime() {
+    private fun requestTeardownLocked(startId: Int, restart: Boolean, stopSelfWhenDone: Boolean = true) {
+        clearAutoRestartLocked()
+        activeTeardownGeneration = commandGeneration
+        teardownStartId = startId
+        pendingRestart = restart
+        pendingStart = restart
+        stopping = true
+        if (teardownInProgress) return
+        teardownInProgress = true
+        thread(name = if (restart) "hermes-restart" else "hermes-stop") {
+            teardownLoop(stopSelfWhenDone)
+        }
+    }
+
+    private fun clearAutoRestartLocked() {
+        autoRestartOwnerGeneration = null
+        autoRestartOwner = null
+    }
+
+    private fun isGenerationCurrent(generation: Long): Boolean = synchronized(lifecycleLock) {
+        generation == commandGeneration && !stopping
+    }
+
+    private fun requireGeneration(generation: Long) {
+        if (!isGenerationCurrent(generation)) throw PayloadInstaller.InstallCancelledException()
+    }
+
+    private fun teardownLoop(stopSelfWhenDone: Boolean) {
+        while (true) {
+            val generation: Long
+            synchronized(lifecycleLock) {
+                generation = activeTeardownGeneration
+            }
+            stopRuntime(generation)
+            var generationMatched = false
+            synchronized(lifecycleLock) {
+                if (generation == activeTeardownGeneration) {
+                    generationMatched = true
+                }
+                if (generationMatched && (pendingStart || pendingRestart) &&
+                    latestCommand != Command.STOP && latestCommand != Command.DESTROY) {
+                    pendingStart = false
+                    pendingRestart = false
+                    teardownInProgress = false
+                    stopping = false
+                    crashTimes.clear()
+                    launchLocked()
+                    return
+                }
+                if (generationMatched) {
+                    teardownInProgress = false
+                    stopping = false
+                    if (stopSelfWhenDone && latestCommand != Command.DESTROY) {
+                        stopForegroundCompat()
+                        stopSelfResult(teardownStartId)
+                    }
+                    return
+                }
+            }
+            // A newer command superseded the teardown while process cleanup ran.
+            // Re-read the active generation outside the synchronized block.
+            continue
+        }
+    }
+
+    private fun scheduleAutoRestart(generation: Long, delayMs: Long) {
+        val failedWorker = Thread.currentThread()
+        synchronized(lifecycleLock) {
+            val ownsFailure = generation == commandGeneration &&
+                (latestCommand == Command.START || latestCommand == Command.AUTO_RESTART) &&
+                !stopping && !teardownInProgress && worker === failedWorker
+            if (ownsFailure) {
+                autoRestartOwnerGeneration = generation
+                autoRestartOwner = failedWorker
+            }
+        }
+        thread(name = "hermes-relaunch") {
+            try {
+                failedWorker.join()
+                Thread.sleep(delayMs)
+            } catch (_: InterruptedException) {
+                synchronized(lifecycleLock) {
+                    if (autoRestartOwnerGeneration == generation && autoRestartOwner === failedWorker) {
+                        clearAutoRestartLocked()
+                    }
+                }
+                return@thread
+            }
+            synchronized(lifecycleLock) {
+                val ownsFailure = autoRestartOwnerGeneration == generation &&
+                    autoRestartOwner === failedWorker && worker === failedWorker &&
+                    !failedWorker.isAlive && commandGeneration == generation &&
+                    (latestCommand == Command.START || latestCommand == Command.AUTO_RESTART) &&
+                    !stopping && !teardownInProgress
+                if (ownsFailure) {
+                    clearAutoRestartLocked()
+                    commandGeneration += 1L
+                    latestCommand = Command.AUTO_RESTART
+                    launchLocked()
+                }
+            }
+        }
+    }
+
+    private fun runRuntime(generation: Long) {
         val installer = PayloadInstaller(this)
         var readyFile: File? = null
+        var attemptedRoot: String? = null
+        var pump: Thread? = null
         try {
+            requireGeneration(generation)
+            attemptedRoot = installer.root.absolutePath
             if (!installer.hasPayload()) {
-                fail("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
-                return
+                throw IOException("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
             }
-            val manifest = installer.manifest()
+            val includedManifest = installer.manifest()
+            if (installer.activeSlotId() == null) quiescePayload(installer.root.absolutePath)
+            val legacyResult = installer.migrateLegacy { !isGenerationCurrent(generation) }
+            if (legacyResult == PayloadInstaller.LegacyMigrationResult.NO_TRUSTED_MANIFEST) {
+                log("旧版运行环境缺少可信 manifest/sidecar；本次升级不提供 previous-good fallback")
+            }
+            requireGeneration(generation)
+            val recovery = installer.recoverPending(::quiescePayload)
+            attemptedRoot = installer.root.absolutePath
+            val manifest = installer.selectedManifest(includedManifest)
+            val usingFallback = manifest.getString("payload_id") != includedManifest.getString("payload_id")
+            val updateError = when {
+                installer.legacyMigrationStatus() == "no-trusted-manifest" -> "legacy-no-fallback"
+                usingFallback -> "payload-startup-rollback"
+                else -> ""
+            }
+            if (recovery.hadPendingActivation && recovery.restoredPayloadId != null) {
+                log("上次运行环境未通过启动检查，改用 previous-good：${recovery.restoredPayloadId}")
+            } else if (usingFallback) {
+                log("跳过已拒绝的 APK payload，继续使用 previous-good")
+            }
             val payloadId = manifest.getString("payload_id")
-            HermesRuntime.update { it.copy(payloadId = payloadId, exitCode = null) }
+            applyManifestIdentity(installer, manifest, updateError)
+            HermesRuntime.update { it.copy(exitCode = null) }
 
-            val swept = ProcUtil.sweep(installer.root.absolutePath)
-            if (swept > 0) log("清理了 $swept 个残留进程")
+            quiescePayload(installer.root.absolutePath)
+            requireGeneration(generation)
+            installer.pruneStaleSlots(::quiescePayload)
 
-            if (installer.needsInstall(manifest)) {
-                val need = manifest.optLong("total_bytes", 0L) + 200L * 1024 * 1024
+            requireGeneration(generation)
+            val needsInstall = installer.needsInstall(manifest)
+            val canReuse = installer.canReuseSlot(manifest)
+            if (needsInstall && !canReuse) {
+                val payloadBytes = manifest.optLong("total_bytes", 0L).coerceAtLeast(0L)
+                val need = payloadBytes * 2L + 200L * 1024 * 1024
                 val free = filesDir.usableSpace
-                if (free in 1 until need) {
+                if (free < need) {
+                    if (!isGenerationCurrent(generation)) return
                     fail("存储空间不足：需要约 ${need / 1_000_000} MB，当前可用 ${free / 1_000_000} MB")
                     return
                 }
+            }
+            if (needsInstall) {
+                requireGeneration(generation)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.INSTALLING, progress = 0f, message = "首次运行，正在解压运行环境…") }
-                installer.install(manifest) { p, label ->
-                    HermesRuntime.update { it.copy(progress = p, message = label) }
-                }
+                installer.install(
+                    manifest,
+                    { p, label -> HermesRuntime.update { it.copy(progress = p, message = label) } },
+                    { !isGenerationCurrent(generation) },
+                    ::quiescePayload,
+                )
+                requireGeneration(generation)
+                attemptedRoot = installer.root.absolutePath
+                applyManifestIdentity(installer, manifest, updateError)
                 log("运行环境已安装：$payloadId")
             }
-            if (stopping) return
+            if (!isGenerationCurrent(generation)) {
+                if (installer.activationPending()) {
+                    val restored = installer.rollback(::quiescePayload, rejectFailed = false)
+                    applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-install-cancelled")
+                    if (restored != null) log("停止期间取消运行环境激活，恢复 previous-good：$restored")
+                }
+                return
+            }
 
             try {
                 RuntimeEnv.installConsoleThemes(this)
@@ -139,24 +325,43 @@ class HermesService : Service() {
             env["HERMES_WEBUI_PASSWORD"] = token
             env.remove("HERMES_DASHBOARD_SESSION_TOKEN")
             log("启动：Hermes WebUI，手机本地端口 $port")
-            val proc = pb.start()
-            process = proc
-            pid = ProcUtil.findChild(cmd[0]) ?: 0
+            val proc: java.lang.Process
+            synchronized(lifecycleLock) {
+                if (generation != commandGeneration || stopping) {
+                    throw PayloadInstaller.InstallCancelledException()
+                }
+                proc = pb.start()
+                process = proc
+            }
+            val childPid = ProcUtil.findChild(cmd[0]) ?: 0
+            synchronized(lifecycleLock) {
+                if (generation != commandGeneration || stopping) {
+                    proc.destroy()
+                    throw PayloadInstaller.InstallCancelledException()
+                }
+                pid = childPid
+                processOwner = ProcessOwner(proc, childPid, attemptedRoot ?: installer.root.absolutePath, generation)
+            }
             HermesRuntime.update { it.copy(pid = pid) }
-            val pump = thread(name = "hermes-log") { pumpLog(proc) }
+            pump = thread(name = "hermes-log") { pumpLog(proc) }
 
-            if (waitHealthy(port, proc, ready)) {
+            if (waitHealthy(port, proc, ready, generation)) {
                 val cookie = ready.readText()
                 ready.delete()
+                synchronized(lifecycleLock) {
+                    requireGeneration(generation)
+                    installer.markHealthy()
+                }
+                applyManifestIdentity(installer, manifest, updateError)
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.RUNNING, webCookie = cookie, message = "运行中") }
                 log("Hermes 已就绪：http://127.0.0.1:$port")
-            } else if (!stopping && proc.isAliveCompat()) {
-                proc.destroy()
+            } else {
+                throw IOException("运行环境未通过启动健康检查")
             }
             val code = proc.waitFor()
-            pump.join(2000)
-            process = null
-            if (stopping) {
+            stopOwnedProcess(attemptedRoot, generation)
+            pump?.join(2000)
+            if (!isGenerationCurrent(generation)) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", exitCode = code, pid = 0) }
             } else {
                 val killed = code == 137 || code == 9
@@ -168,34 +373,155 @@ class HermesService : Service() {
                     log("Hermes 进程退出（代码 $code$hint），自动重启（${crashTimes.size}/$MAX_AUTO_RESTARTS）")
                     HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STARTING, message = "正在自动重启…", exitCode = code, pid = 0) }
                     releaseWakeLock()
-                    Thread.sleep(2000L * crashTimes.size)
-                    if (!stopping) {
-                        thread(name = "hermes-relaunch") {
-                            worker?.join()
-                            launch()
-                        }
-                    }
+                    scheduleAutoRestart(generation, 2000L * crashTimes.size)
                     return
                 }
                 fail("Hermes 进程意外退出（代码 $code$hint），请查看日志", code)
             }
         } catch (t: Throwable) {
             log("错误：${t}")
-            fail(t.message ?: t.toString())
+            try {
+                stopOwnedProcess(attemptedRoot, generation)
+                pump?.join(2000)
+                val cancelled = !isGenerationCurrent(generation) || t is PayloadInstaller.InstallCancelledException
+                if (cancelled) {
+                    if (installer.activationPending()) {
+                        val restored = installer.rollback(::quiescePayload, rejectFailed = false)
+                        val restoredManifest = installer.installedManifest()
+                        applyManifestIdentity(installer, restoredManifest ?: org.json.JSONObject(), "payload-install-cancelled")
+                        if (restored != null) log("运行环境安装已取消，恢复 previous-good：$restored")
+                    } else {
+                        applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-install-cancelled")
+                    }
+                    return
+                }
+                if (installer.activationPending()) {
+                    val restored = installer.rollback(::quiescePayload)
+                    val restoredManifest = installer.installedManifest()
+                    applyManifestIdentity(installer, restoredManifest ?: org.json.JSONObject(), "payload-activation-rollback")
+                    if (isGenerationCurrent(generation) && restored != null && restoredManifest != null) {
+                        log("运行环境激活失败，已回滚到 $restored，重新启动 previous-good")
+                        return runRuntime(generation)
+                    }
+                } else {
+                    applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-activation-failed")
+                }
+            } catch (recoveryFailure: Throwable) {
+                // Do not activate another slot while quiescence or state durability is uncertain.
+                log("回滚未完成：${recoveryFailure}")
+                fail("运行环境清理或回滚未完成，请查看日志", updateError = "payload-recovery-failed")
+                return
+            }
+            fail(t.message ?: t.toString(), updateError = "payload-activation-failed")
         } finally {
             readyFile?.let { it.delete(); File(it.parentFile, "${it.nameWithoutExtension}.tmp").delete() }
             releaseWakeLock()
         }
     }
 
-    private fun fail(message: String, code: Int? = null) {
-        HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.ERROR, message = message, exitCode = code, pid = 0, progress = -1f) }
+    private fun applyManifestIdentity(installer: PayloadInstaller, manifest: org.json.JSONObject, updateError: String = "") {
+        val runtime = manifest.optJSONObject("runtime")
+        val webui = manifest.optJSONObject("webui")
+        val compatibility = manifest.optJSONObject("compatibility")
+        HermesRuntime.update {
+            it.copy(
+                payloadId = manifest.optString("payload_id"),
+                runtimeChannel = runtime?.optString("channel").orEmpty(),
+                runtimeVersion = runtime?.optString("version").orEmpty(),
+                runtimeCommit = runtime?.optString("source_commit").orEmpty(),
+                webuiChannel = webui?.optString("channel").orEmpty(),
+                webuiTag = webui?.optString("tag").orEmpty(),
+                webuiCommit = webui?.optString("commit").orEmpty(),
+                webuiStagedSha256 = webui?.optString("staged_sha256").orEmpty(),
+                compatibilityStatus = compatibility?.optString("status", "unknown") ?: "unknown",
+                activeSlot = installer.activeSlotId().orEmpty(),
+                previousGoodSlot = installer.previousGoodSlotId().orEmpty(),
+                activationPending = installer.activationPending(),
+                updateError = updateError,
+                legacyMigrationStatus = installer.legacyMigrationStatus(),
+            )
+        }
     }
 
-    private fun waitHealthy(port: Int, proc: java.lang.Process, ready: File): Boolean {
+    private fun fail(message: String, code: Int? = null, updateError: String = "") {
+        HermesRuntime.update {
+            it.copy(
+                phase = HermesRuntime.Phase.ERROR,
+                message = message,
+                exitCode = code,
+                pid = 0,
+                progress = -1f,
+                updateError = updateError.ifBlank { it.updateError },
+            )
+        }
+    }
+
+    /** Stop the process before changing the slot it was executing from. */
+    private fun stopOwnedProcess(root: String?, generation: Long?) {
+        val proc: java.lang.Process?
+        val target: Int
+        val canStopTree: Boolean
+        synchronized(lifecycleLock) {
+            val owner = processOwner
+            val current = process
+            val ownerMatches = owner != null && current === owner.process &&
+                (root == null || owner.root == root) &&
+                (generation == null || owner.generation == generation)
+            proc = owner?.process ?: current
+            target = if (ownerMatches) owner?.pid ?: 0 else 0
+            canStopTree = ownerMatches && owner != null && ownerIsCurrentLocked(owner)
+        }
+        var interrupted = Thread.interrupted()
+        try {
+            if (canStopTree && target > 0 && proc?.isAliveCompat() == true) {
+                ProcUtil.stopTree(target, graceMs = 0)
+            }
+            proc?.destroy()
+            root?.let { quiescePayload(it) }
+            while (true) {
+                try {
+                    proc?.waitFor()
+                    break
+                } catch (_: InterruptedException) {
+                    interrupted = true
+                }
+            }
+            root?.let { quiescePayload(it) }
+            synchronized(lifecycleLock) {
+                if (process === proc) {
+                    process = null
+                    if (processOwner?.process === proc) processOwner = null
+                }
+            }
+            if (pid == target) pid = 0
+        } finally {
+            if (interrupted) Thread.currentThread().interrupt()
+        }
+    }
+
+    private fun ownerIsCurrentLocked(owner: ProcessOwner): Boolean {
+        if (processOwner !== owner || process !== owner.process || !owner.process.isAliveCompat()) return false
+        return ProcUtil.list().firstOrNull { it.pid == owner.pid }
+            ?.cmdline
+            ?.contains(owner.root) == true
+    }
+
+    /** Includes orphaned candidates after app death; failure prevents slot mutation. */
+    private fun quiescePayload(root: String) {
+        val owners = ProcUtil.list().filter { it.cmdline.contains(root) }
+        owners.forEach { ProcUtil.stopTree(it.pid, graceMs = 0) }
+        ProcUtil.sweep(root)
+        val deadline = android.os.SystemClock.elapsedRealtime() + 5000L
+        while (ProcUtil.list().any { it.cmdline.contains(root) }) {
+            if (android.os.SystemClock.elapsedRealtime() >= deadline) throw IOException("payload process cleanup timed out")
+            Thread.sleep(50)
+        }
+    }
+
+    private fun waitHealthy(port: Int, proc: java.lang.Process, ready: File, generation: Long): Boolean {
         val deadline = System.currentTimeMillis() + 10 * 60 * 1000L
         while (System.currentTimeMillis() < deadline) {
-            if (stopping || !proc.isAliveCompat()) return false
+            if (!isGenerationCurrent(generation) || !proc.isAliveCompat()) return false
             try {
                 if (!ready.isFile) { Thread.sleep(500); continue }
                 val conn = URL("http://127.0.0.1:$port/health").openConnection(java.net.Proxy.NO_PROXY) as HttpURLConnection
@@ -204,7 +530,7 @@ class HermesService : Service() {
                 conn.instanceFollowRedirects = false
                 val code = conn.responseCode
                 conn.disconnect()
-                if (code == 200 && proc.isAliveCompat()) return true
+                if (code == 200 && proc.isAliveCompat() && isGenerationCurrent(generation)) return true
             } catch (_: Exception) {
             }
             Thread.sleep(700)
@@ -232,22 +558,39 @@ class HermesService : Service() {
         }
     }
 
-    private fun stopRuntime() {
-        stopping = true
-        val proc = process
-        if (proc != null || pid > 0) {
-            HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
-            val target = if (pid > 0) pid else 0
-            if (target > 0) ProcUtil.stopTree(target) else proc?.destroy()
-            try {
-                proc?.waitFor()
-            } catch (_: InterruptedException) {
+    private fun stopRuntime(generation: Long) {
+        val proc: java.lang.Process?
+        val target: Int
+        val owner: ProcessOwner?
+        synchronized(lifecycleLock) {
+            if (generation != activeTeardownGeneration) return
+            stopping = true
+            proc = process
+            owner = processOwner
+            target = owner?.pid ?: 0
+            if (proc != null || target > 0 || worker?.isAlive == true) {
+                HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPING, message = "正在停止…") }
+            }
+            // Re-check the teardown generation immediately before killing the owned process.
+            if (generation != activeTeardownGeneration) return
+            if (owner != null && target > 0 && ownerIsCurrentLocked(owner) && proc?.isAliveCompat() == true) {
+                ProcUtil.stopTree(target)
+            } else {
+                proc?.destroy()
             }
         }
-        worker?.join(5000)
-        process = null
-        pid = 0
-        HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
+        try {
+            proc?.waitFor()
+        } catch (_: InterruptedException) {
+        }
+        worker?.join()
+        synchronized(lifecycleLock) {
+            if (generation != activeTeardownGeneration) return
+            process = null
+            processOwner = null
+            pid = 0
+            HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
+        }
     }
 
     private fun choosePort(preferred: Int): Int {
