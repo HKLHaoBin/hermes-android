@@ -21,7 +21,7 @@
     "receipt_kind": { "const": "android-device-acceptance" },
     "schema_version": { "const": 1 },
     "receipt_id": { "type": "string", "minLength": 1 },
-    "generated_at": { "type": "string", "format": "date-time" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
     "aggregate_status": { "$ref": "#/$defs/status" },
     "operator": { "$ref": "#/$defs/operator" },
     "device": { "$ref": "#/$defs/device" },
@@ -32,6 +32,43 @@
       "minItems": 35,
       "maxItems": 35,
       "uniqueItems": true,
+      "allOf": [
+        {"contains":{"properties":{"id":{"const":"RD-ID-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-INSTALL-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-INSTALL-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-COLD-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-UPGRADE-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-MIGRATION-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-ROLLBACK-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-RUNTIME-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-RUNTIME-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-RUNTIME-03"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-RUNTIME-04"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-RUNTIME-05"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-JOB-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-JOB-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-WEB-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-WEB-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-STREAM-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-STREAM-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-TERM-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-SAF-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-SAF-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-SAF-03"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-SAF-04"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-SAF-05"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-BG-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-BG-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-BG-03"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-BG-04"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-MEMORY-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-PROCESS-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-LARGE-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-UX-01"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-UX-02"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-UX-03"}},"required":["id"]},"minContains":1,"maxContains":1},
+        {"contains":{"properties":{"id":{"const":"RD-UX-04"}},"required":["id"]},"minContains":1,"maxContains":1}
+      ],
       "items": { "$ref": "#/$defs/test" }
     },
     "redaction": { "$ref": "#/$defs/redaction" }
@@ -39,11 +76,23 @@
   "$defs": {
     "sha256": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])"
     },
     "sha1": {
       "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
+      "pattern": "^[0-9a-f]{40}(?![\\s\\S])"
+    },
+    "timestamp": {
+      "type": "string", "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z(?![\\s\\S])"
+    },
+    "known_precondition": {
+      "type": "string", "minLength": 1,
+      "pattern": "^(?!.*[uU][nN][kK][nN][oO][wW][nN])(?!.*(?:^|[-_\\s])(?:[nN]/?[aA]|[nN][oO][nN][eE]|[nN][uU][lL][lL]|[uU][nN][sS][eE][tT]|[fF][iI][xX][tT][uU][rR][eE]|[mM][oO][cC][kK]|[tT][eE][sS][tT][-_ ]?[oO][nN][lL][yY]|[nN][oO][tT][-_ ]+[aA][vV][aA][iI][lL][aA][bB][lL][eE]|[oO][pP][eE][rR][aA][tT][oO][rR]-[sS][eE][tT]-[bB][eE][fF][oO][rR][eE]-[rR][uU][nN])(?:$|[-_\\s]))(?=\\S)(?=.*\\S$).+(?![\\s\\S])"
+    },
+    "installed_path": {
+      "type": "string",
+      "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))/(?:data/app|product/app|system/app|system/priv-app)/[^\\r\\n]+\\.apk(?![\\s\\S])"
     },
     "status": {
       "type": "string",
@@ -91,6 +140,7 @@
         "transport",
         "webview",
         "display",
+        "screen_capability",
         "input",
         "battery",
         "notification_permission",
@@ -140,7 +190,7 @@
           "required": ["optimization", "oem_policy"],
           "properties": {
             "optimization": { "type": "string", "enum": ["optimized", "exempt"] },
-            "oem_policy": { "type": "string", "minLength": 1 }
+            "oem_policy": { "$ref": "#/$defs/known_precondition" }
           }
         },
         "notification_permission": {
@@ -152,11 +202,18 @@
           "additionalProperties": false,
           "required": ["mode", "backend_id"],
           "properties": {
-            "mode": { "type": "string", "minLength": 1 },
-            "backend_id": { "type": "string", "minLength": 1 }
+            "mode": { "type": "string", "enum": ["connected", "disconnected", "airplane"] },
+            "backend_id": { "$ref": "#/$defs/known_precondition" }
           }
-        }
-      }
+        },
+        "screen_capability": { "$ref": "#/$defs/screen_capability" }
+      },
+      "allOf": [{
+        "if": {"required": ["slot_id"], "properties": {"slot_id": {"const": "Large-screen"}}},
+        "then": {"properties": {"screen_capability": {"properties": {
+          "kind": {"const": "large-screen"}, "minimum_dimension_dp": {"minimum": 600}
+        }}}}
+      }]
     },
     "artifact": {
       "type": "object",
@@ -210,13 +267,50 @@
       "additionalProperties": false,
       "required": ["install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"],
       "properties": {
-        "install_mode": { "type": "string", "minLength": 1 },
-        "notification_permission": { "type": "string", "minLength": 1 },
-        "battery_optimization": { "type": "string", "minLength": 1 },
-        "network_mode": { "type": "string", "minLength": 1 },
-        "screen_state": { "type": "string", "minLength": 1 },
-        "backend_id": { "type": "string", "minLength": 1 }
+        "install_mode": { "allOf": [{ "$ref": "#/$defs/precondition_record" }], "properties": {
+          "value": { "enum": ["installed"] }, "source": { "const": "adb:pm-path" }, "evidence": { "$ref": "#/$defs/installed_path" }
+        }},
+        "notification_permission": { "allOf": [{ "$ref": "#/$defs/precondition_record" }], "properties": {
+          "value": { "enum": ["allow", "deny", "default"] }, "source": { "const": "adb:appops" }, "evidence": {"enum": ["allow", "deny", "default"]}
+        }},
+        "battery_optimization": { "allOf": [{ "$ref": "#/$defs/precondition_record" }], "properties": {
+          "value": { "enum": ["optimized", "exempt"] }, "source": { "const": "adb:deviceidle" }, "evidence": {"enum": ["optimized", "exempt"]}
+        }},
+        "network_mode": { "allOf": [{ "$ref": "#/$defs/precondition_record" }], "properties": {
+          "value": { "enum": ["connected", "disconnected", "airplane"] }, "source": { "const": "adb:connectivity" }, "evidence": {"enum": ["connected", "disconnected", "airplane"]}
+        }},
+        "screen_state": { "allOf": [{ "$ref": "#/$defs/precondition_record" }], "properties": {
+          "value": { "enum": ["interactive", "non-interactive"] }, "source": { "const": "adb:power" },
+          "evidence": { "enum": ["mWakefulness=Awake", "mWakefulness=Dreaming", "mWakefulness=Asleep", "mWakefulness=Dozing"] }
+        }},
+        "backend_id": { "allOf": [{ "$ref": "#/$defs/precondition_record" }], "properties": {
+          "value": { "$ref": "#/$defs/known_precondition" }, "source": { "const": "operator-authorization" }, "evidence": {"$ref": "#/$defs/known_precondition"}
+        }}
       }
+    },
+    "precondition_record": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "source", "observed_at", "evidence"],
+      "properties": {
+        "value": {"type": "string", "pattern": "\\S"},
+        "source": {"type": "string", "pattern": "\\S"},
+        "observed_at": {"$ref": "#/$defs/timestamp"},
+        "evidence": {"type": "string", "pattern": "\\S"}
+      }
+    },
+    "screen_capability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "minimum_dimension_dp", "source"],
+      "properties": {
+        "kind": {"enum": ["phone", "large-screen"]},
+        "minimum_dimension_dp": {"type": "integer", "minimum": 1},
+        "source": {"const": "adb:wm"}
+      },
+      "allOf": [{
+        "if": {"required": ["kind"], "properties": {"kind": {"const": "large-screen"}}},
+        "then": {"properties": {"minimum_dimension_dp": {"minimum": 600}}},
+        "else": {"properties": {"minimum_dimension_dp": {"maximum": 599}}}
+      }]
     },
     "evidence": {
       "type": "object",
@@ -226,7 +320,7 @@
         "path": {
           "type": "string",
           "minLength": 1,
-          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$)).+"
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\\\\\r\\n]+(?![\\s\\S])"
         },
         "sha256": { "$ref": "#/$defs/sha256" },
         "kind": {
@@ -269,7 +363,7 @@
           "additionalProperties": false,
           "required": ["package_path", "sha256", "size_bytes", "application_id", "version_name", "version_code"],
           "properties": {
-            "package_path": { "type": "string", "minLength": 1, "pattern": "^/(data/app|product/app|system/app|system/priv-app)/.+\\.apk$", "description": "Path returned by adb shell pm path for the installed package; its content/version fields must match artifact.apk." },
+            "package_path": { "$ref": "#/$defs/installed_path", "description": "Path returned by adb shell pm path for the installed package; its content/version fields must match artifact.apk." },
             "sha256": { "$ref": "#/$defs/sha256" },
             "size_bytes": { "type": "integer", "minimum": 1 },
             "application_id": { "type": "string", "minLength": 1 },
@@ -282,10 +376,11 @@
           "items": { "$ref": "#/$defs/evidence" }
         },
         "redaction_checked": { "const": true },
-        "started_at": { "type": "string", "format": "date-time" },
-        "finished_at": { "type": "string", "format": "date-time" }
+        "started_at": { "$ref": "#/$defs/timestamp" },
+        "finished_at": { "$ref": "#/$defs/timestamp" }
       },
       "allOf": [
+        {"$ref": "#/$defs/test_contract"},
         {
           "if": {
             "required": ["status"],
@@ -305,7 +400,10 @@
             "properties": { "status": { "const": "PASS" } }
           },
           "then": {
-            "properties": { "failure_class": { "type": "null" } }
+            "properties": {
+              "failure_class": { "type": "null" },
+              "evidence": {"contains": {"required": ["kind"], "properties": {"kind": {"const": "json"}}}}
+            }
           }
         },
         {
@@ -335,6 +433,45 @@
             }
           }
         }
+      ]
+    },
+    "test_contract": {
+      "oneOf": [
+        {"properties":{"id":{"const":"RD-ID-01"},"expected":{"const":"Authorized physical device identity matches the assigned matrix slot."},"evidence":{"items":{"properties":{"kind":{"enum":["device-metadata","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Authorized physical device identity matches the assigned matrix slot."}}}},
+        {"properties":{"id":{"const":"RD-INSTALL-01"},"expected":{"const":"Exact signed APK installs without clearing application data."},"evidence":{"items":{"properties":{"kind":{"enum":["apk-install","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Exact signed APK installs without clearing application data."}}}},
+        {"properties":{"id":{"const":"RD-INSTALL-02"},"expected":{"const":"Installed package reports the exact artifact application and version identity."},"evidence":{"items":{"properties":{"kind":{"enum":["apk-install","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Installed package reports the exact artifact application and version identity."}}}},
+        {"properties":{"id":{"const":"RD-COLD-01"},"expected":{"const":"Cold start reaches the expected ready state."},"evidence":{"items":{"properties":{"kind":{"enum":["runtime-status","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Cold start reaches the expected ready state."}}}},
+        {"properties":{"id":{"const":"RD-UPGRADE-01"},"expected":{"const":"Same-signer upgrade preserves application data and starts."},"evidence":{"items":{"properties":{"kind":{"enum":["apk-upgrade","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Same-signer upgrade preserves application data and starts."}}}},
+        {"properties":{"id":{"const":"RD-MIGRATION-01"},"expected":{"const":"Existing application data migrates to the expected current schema without loss."},"evidence":{"items":{"properties":{"kind":{"enum":["migration","json","log"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Existing application data migrates to the expected current schema without loss."}}}},
+        {"properties":{"id":{"const":"RD-ROLLBACK-01"},"expected":{"const":"Declared rollback path restores the previous known-good application state."},"evidence":{"items":{"properties":{"kind":{"enum":["rollback","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Declared rollback path restores the previous known-good application state."}}}},
+        {"properties":{"id":{"const":"RD-RUNTIME-01"},"expected":{"const":"Runtime launches with the manifest payload and reaches ready state."},"evidence":{"items":{"properties":{"kind":{"enum":["runtime-status","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Runtime launches with the manifest payload and reaches ready state."}}}},
+        {"properties":{"id":{"const":"RD-RUNTIME-02"},"expected":{"const":"Hermes runtime and WebUI report the expected pinned revisions."},"evidence":{"items":{"properties":{"kind":{"enum":["runtime-status","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Hermes runtime and WebUI report the expected pinned revisions."}}}},
+        {"properties":{"id":{"const":"RD-RUNTIME-03"},"expected":{"const":"Capability diagnostics report the expected Android API and ABI."},"evidence":{"items":{"properties":{"kind":{"enum":["capabilities","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Capability diagnostics report the expected Android API and ABI."}}}},
+        {"properties":{"id":{"const":"RD-RUNTIME-04"},"expected":{"const":"Runtime restart preserves the expected session and service state."},"evidence":{"items":{"properties":{"kind":{"enum":["runtime-status","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Runtime restart preserves the expected session and service state."}}}},
+        {"properties":{"id":{"const":"RD-RUNTIME-05"},"expected":{"const":"Unsupported capability is reported with an explicit bounded state."},"evidence":{"items":{"properties":{"kind":{"enum":["capabilities","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Unsupported capability is reported with an explicit bounded state."}}}},
+        {"properties":{"id":{"const":"RD-JOB-01"},"expected":{"const":"An actual integrated Agent job completes with durable ledger state."},"evidence":{"items":{"properties":{"kind":{"enum":["job-ledger","notification","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"An actual integrated Agent job completes with durable ledger state."}}}},
+        {"properties":{"id":{"const":"RD-JOB-02"},"expected":{"const":"A recovered job resumes or fails with bounded retry and notification state."},"evidence":{"items":{"properties":{"kind":{"enum":["job-ledger","notification","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"A recovered job resumes or fails with bounded retry and notification state."}}}},
+        {"properties":{"id":{"const":"RD-WEB-01"},"expected":{"const":"WebView origin and feature isolation remain within the expected boundary."},"evidence":{"items":{"properties":{"kind":{"enum":["webview","screenshot","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"WebView origin and feature isolation remain within the expected boundary."}}}},
+        {"properties":{"id":{"const":"RD-WEB-02"},"expected":{"const":"WebView authentication and CSRF behavior match the expected policy."},"evidence":{"items":{"properties":{"kind":{"enum":["webview","network","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"WebView authentication and CSRF behavior match the expected policy."}}}},
+        {"properties":{"id":{"const":"RD-STREAM-01"},"expected":{"const":"Streaming response reaches the expected terminal state."},"evidence":{"items":{"properties":{"kind":{"enum":["stream","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Streaming response reaches the expected terminal state."}}}},
+        {"properties":{"id":{"const":"RD-STREAM-02"},"expected":{"const":"Network loss and reconnect preserve the expected stream and session state."},"evidence":{"items":{"properties":{"kind":{"enum":["stream","network","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Network loss and reconnect preserve the expected stream and session state."}}}},
+        {"properties":{"id":{"const":"RD-TERM-01"},"expected":{"const":"Terminal authentication and transport controls enforce the expected policy."},"evidence":{"items":{"properties":{"kind":{"enum":["terminal","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Terminal authentication and transport controls enforce the expected policy."}}}},
+        {"properties":{"id":{"const":"RD-SAF-01"},"expected":{"const":"Scoped-storage picker imports the selected file with an exact receipt."},"evidence":{"items":{"properties":{"kind":{"enum":["file-import","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Scoped-storage picker imports the selected file with an exact receipt."}}}},
+        {"properties":{"id":{"const":"RD-SAF-02"},"expected":{"const":"Unsupported or failed picker input produces the expected visible failure."},"evidence":{"items":{"properties":{"kind":{"enum":["file-import","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Unsupported or failed picker input produces the expected visible failure."}}}},
+        {"properties":{"id":{"const":"RD-SAF-03"},"expected":{"const":"Duplicate import handling preserves the expected file identity."},"evidence":{"items":{"properties":{"kind":{"enum":["file-import","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Duplicate import handling preserves the expected file identity."}}}},
+        {"properties":{"id":{"const":"RD-SAF-04"},"expected":{"const":"Image import preserves the expected metadata and ownership."},"evidence":{"items":{"properties":{"kind":{"enum":["file-import","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Image import preserves the expected metadata and ownership."}}}},
+        {"properties":{"id":{"const":"RD-SAF-05"},"expected":{"const":"Large or non-image import remains within the expected storage boundary."},"evidence":{"items":{"properties":{"kind":{"enum":["file-import","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Large or non-image import remains within the expected storage boundary."}}}},
+        {"properties":{"id":{"const":"RD-BG-01"},"expected":{"const":"Locked-screen foreground operation preserves the expected job state."},"evidence":{"items":{"properties":{"kind":{"enum":["job-ledger","notification","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Locked-screen foreground operation preserves the expected job state."}}}},
+        {"properties":{"id":{"const":"RD-BG-02"},"expected":{"const":"Backgrounding preserves the expected service and job state."},"evidence":{"items":{"properties":{"kind":{"enum":["job-ledger","notification","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Backgrounding preserves the expected service and job state."}}}},
+        {"properties":{"id":{"const":"RD-BG-03"},"expected":{"const":"Process death recovery produces the expected durable job state."},"evidence":{"items":{"properties":{"kind":{"enum":["job-ledger","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Process death recovery produces the expected durable job state."}}}},
+        {"properties":{"id":{"const":"RD-BG-04"},"expected":{"const":"OEM battery policy and task removal produce the expected explicit outcome."},"evidence":{"items":{"properties":{"kind":{"enum":["job-ledger","notification","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"OEM battery policy and task removal produce the expected explicit outcome."}}}},
+        {"properties":{"id":{"const":"RD-MEMORY-01"},"expected":{"const":"Memory pressure preserves or recovers the expected runtime and job state."},"evidence":{"items":{"properties":{"kind":{"enum":["memory-pressure","job-ledger","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Memory pressure preserves or recovers the expected runtime and job state."}}}},
+        {"properties":{"id":{"const":"RD-PROCESS-01"},"expected":{"const":"System process recreation restores the expected service and session state."},"evidence":{"items":{"properties":{"kind":{"enum":["process-recreation","job-ledger","log","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"System process recreation restores the expected service and session state."}}}},
+        {"properties":{"id":{"const":"RD-LARGE-01"},"expected":{"const":"Large-screen or foldable layout exposes every required surface at the expected usable size."},"evidence":{"items":{"properties":{"kind":{"enum":["large-screen","layout","screenshot","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Large-screen or foldable layout exposes every required surface at the expected usable size."}}}},
+        {"properties":{"id":{"const":"RD-UX-01"},"expected":{"const":"TalkBack exposes the expected labels and focus order."},"evidence":{"items":{"properties":{"kind":{"enum":["accessibility","screenshot","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"TalkBack exposes the expected labels and focus order."}}}},
+        {"properties":{"id":{"const":"RD-UX-02"},"expected":{"const":"The selected IME produces the expected input and focus behavior."},"evidence":{"items":{"properties":{"kind":{"enum":["ime","screenshot","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"The selected IME produces the expected input and focus behavior."}}}},
+        {"properties":{"id":{"const":"RD-UX-03"},"expected":{"const":"Rotation and font scale preserve the expected layout and interaction state."},"evidence":{"items":{"properties":{"kind":{"enum":["layout","screenshot","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Rotation and font scale preserve the expected layout and interaction state."}}}},
+        {"properties":{"id":{"const":"RD-UX-04"},"expected":{"const":"Large-screen or split-screen layout preserves the expected usable surfaces."},"evidence":{"items":{"properties":{"kind":{"enum":["layout","screenshot","json"]}}}}},"if":{"properties":{"status":{"const":"PASS"}}},"then":{"properties":{"observed":{"const":"Large-screen or split-screen layout preserves the expected usable surfaces."}}}}
       ]
     },
     "redaction": {

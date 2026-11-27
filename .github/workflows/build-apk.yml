@@ -40,9 +40,11 @@ jobs:
 
       - name: Issue #14 device matrix static validation
         run: |
+          python3 -m pip install 'jsonschema==4.26.0'
           python3 scripts/android_device_matrix.py validate-matrix docs/android-device-matrix.json
           python3 scripts/test_android_device_matrix.py
           python3 scripts/test_android_device_integration.py
+          python3 scripts/test_android_device_schema.py
 
       - name: Free disk space
         run: |

@@ -22,7 +22,7 @@ The harness records and gates:
 - exact Hermes runtime version/SHA/source commit/payload ID and WebUI revision;
 - one identical artifact identity across every required device receipt;
 - per-test status, observation, failure class, evidence paths and evidence hashes;
-- fixed per-test expected state, allowed evidence kinds, non-empty hashable evidence and exact installed-APK identity;
+- fixed per-test expected state, structured device/artifact/scenario-bound JSON proof, allowed supplementary evidence kinds and exact installed-APK identity;
 - redaction state and release-gate eligibility.
 
 The harness does not:
@@ -49,6 +49,8 @@ The existing `scripts/e2e.sh` is not the release harness. In particular, it chan
 | `Large-screen` | assigned device | any | `arm64-v8a` | yes |
 
 `Large-screen` is an M1 required slot for the explicit large-screen/foldable gate. `OEM-stress` remains an M1 optional slot. Both remain capability rows until an actual authorized device is assigned. A slot does not contain a model, serial, fingerprint, result, or status. Static validation compares every slot's API/OEM/ABI/tier/required fields with the harness contract; swapping A13/A14 values is invalid even if aggregate API coverage still looks complete.
+
+The measurable large-screen predicate is `floor(min(width_px, height_px) * 160 / density_dpi) >= 600`. Capture uses the effective `wm size` and `wm density` values (the override when one is present). Every device includes `screen_capability` with `kind`, `minimum_dimension_dp`, and `source=adb:wm`; validation recomputes the dimension from the captured display, not a model name or operator flag. A 1080×2400 display at 420dpi is compact and cannot fill `Large-screen`. Foldables qualify only in a measured posture satisfying the same 600dp predicate; a hinge name, advertised feature, or folded phone-sized viewport does not qualify. `RD-LARGE-01` proof must copy the exact capability identity and report all required usable UI surfaces.
 
 ## Status semantics
 
@@ -149,7 +151,7 @@ The receipt may not contain:
 - raw device serials;
 - complete user messages, provider credentials or session contents.
 
-The validator rejects secret-like field names and values, raw `serial`, bearer strings, private-key headers and common credential assignments. It scans both the receipt JSON and the bytes of every evidence file before `record` can write `redaction_checked=true`. The receipt records only `serial_sha256`, `serial_suffix`, authorization reference, structured device state and evidence hashes. Evidence files must be scrubbed before they are referenced. `raw_serial_stored=false`, `secrets_stored=false`, and `patterns_checked=true` are mandatory receipt fields.
+The validator rejects secret-like field names and values, raw `serial`, bearer strings, private-key headers and common credential assignments. JSON evidence is parsed before recursive field-name scanning, including nested and escaped keys. Text evidence uses the same credential/serial-assignment policy, rejects raw ADB serial listings and `adb -s` commands, and checks candidate serial tokens against the receipt's serial digest. Evidence cannot escape its receipt directory through a relative path or symlink. The receipt records only `serial_sha256`, `serial_suffix`, authorization reference, structured device state and evidence hashes. Evidence files must be scrubbed before they are referenced. `raw_serial_stored=false`, `secrets_stored=false`, and `patterns_checked=true` are mandatory receipt fields.
 
 ## Hardware capture
 
@@ -166,7 +168,20 @@ python3 scripts/android_device_matrix.py capture \
   --backend-id <controlled-backend-id>
 ```
 
-The command reads only ADB metadata: `getprop`, display size/density, WebView provider, IME/accessibility settings, notification app-op, device-idle summary and airplane-mode state. It rejects `emulator-*`/test serials, emulator transport, and QEMU properties such as `ro.kernel.qemu`; it also rejects missing or literal-unknown model/release/fingerprint/security-patch/OEM-skin identity. It does not invoke `adb install`, `am start`, `settings put`, `pm grant`, `cmd deviceidle`, or any package-verifier command.
+The command reads only ADB metadata: `getprop`, display size/density, installed package path/version/hash/size, WebView provider, IME/accessibility settings, notification app-op, device-idle summary, connectivity/airplane state and `dumpsys power` wakefulness. It rejects `emulator-*`/test serials, emulator transport, and QEMU properties such as `ro.kernel.qemu`; it also rejects missing or literal-unknown model/release/fingerprint/security-patch/OEM-skin identity. It does not invoke `adb install`, `am start`, `settings put`, `pm grant`, `cmd deviceidle`, or any package-verifier command.
+
+Each precondition is an object containing `value`, exact `source`, UTC `observed_at`, and non-empty `evidence`. The fixed capture values are:
+
+| Field | Values | Source/evidence |
+|---|---|---|
+| `install_mode` | `installed` | `adb:pm-path`; the observed installed APK path, also matched against every test's installed package path |
+| `screen_state` | `interactive`, `non-interactive` | `adb:power`; the captured `mWakefulness=Awake`, `Dreaming`, `Asleep`, or `Dozing` field |
+| `notification_permission` | `allow`, `deny`, `default` | `adb:appops`; captured value |
+| `battery_optimization` | `optimized`, `exempt` | `adb:deviceidle`; captured value |
+| `network_mode` | `connected`, `disconnected`, `airplane` | `adb:connectivity`; captured value |
+| `backend_id` | known authorized backend ID | `operator-authorization`; supplied authorized identifier |
+
+`installed` proves only current package presence. It does not pretend to distinguish clean-install, upgrade, migration, or rollback history; those scenarios require their own executed-test proof. The schema and runtime both reject reminder strings, unknown/placeholder values, missing evidence and unapproved source names. The runtime additionally verifies evidence/value correspondence and consistency with the captured device/package. Unknown capture prerequisites raise `BLOCKED` before writing a receipt.
 
 If no authorized online device is present, capture exits with code `2` and writes no receipt. That is the expected blocked behavior in environments without hardware. Multiple online devices require an explicit `--serial`.
 
@@ -181,13 +196,40 @@ python3 scripts/android_device_matrix.py record \
   --status PASS \
   --observed <short-observed-state> \
   --reason <why-this-status-is-supported> \
-  --evidence-kind <contract-kind> \
-  --evidence-kind <second-contract-kind> \
-  --evidence receipts/<slot-id>/status.json \
-  --evidence receipts/<slot-id>/screen.png
+  --evidence-kind json \
+  --evidence receipts/<slot-id>/<test-id>-proof.json
 ```
 
 Every test record requires the harness-owned `expected` contract, a PASS `observed` value equal to that fixed expected state, a non-empty `--reason`, and an `installed_apk` object captured from the actual installed package metadata. Its SHA-256, size, application ID, version name and version code must exactly match `receipt.artifact.apk`; the package path remains the device-captured path and is never copied from the artifact manifest. Evidence kinds are checked against the fixed contract for that test; pass them explicitly with one `--evidence-kind` per `--evidence` when the file suffix is not the semantic kind. For `FAIL` or `BLOCKED`, also provide `--failure-class`. For `NOT RUN`, provide a reason such as a missing prerequisite and no evidence. Evidence paths are relative in the receipt, re-hashed, must be non-empty for executed tests, and content-scanned by the validator. `record` refuses to update a receipt that is not marked as authorized hardware evidence, is bound to a different APK, uses an unapproved evidence kind, contains zero-byte evidence, or contains credentials including quoted JSON `token`/`password` keys.
+
+### Structured PASS proof contract
+
+Every PASS requires at least one `kind=json` proof file. Logs and screenshots may supplement it but cannot replace it. `record` parses the operator/lab-supplied proof; it does not manufacture one from the static expected sentence. Test timestamps are taken from that proof, must be valid UTC times in chronological order, and must match every proof for the test. After recording, `gate` reopens and hashes every file and validates the proof again. Validation without `--check-evidence` checks receipt metadata only, not evidence contents or release eligibility.
+
+The JSON envelope contains exactly these fields:
+
+- `evidence_schema_version=1`, `kind=json`, `test_id`, `receipt_id`, `expected`, `observed`, `started_at`, `finished_at`;
+- `device`: exact `slot_id`, `device_id`, `serial_sha256`, and `identity_sha256` of the complete captured `device` object;
+- `artifact`: exact APK `filename`, APK `sha256`, and `identity_sha256` of `artifact_identity(receipt.artifact)` (the ordered complete APK/build/runtime/WebUI identity);
+- `preconditions_sha256`: digest of the complete captured preconditions object;
+- `scenario`: the exact `name` in `SCENARIO_CONTRACT[test_id]`;
+- `assertions`: exactly the unique scenario assertion names, each with the harness-owned test `expected`, actual `observed`, and boolean `passed`; a PASS assertion must match its fixed expectation and have `passed=true`;
+- `measurements`: test-specific observations described below;
+- additionally for `RD-LARGE-01`, `capability`: the exact device `screen_capability` object.
+
+Identity digests use SHA-256 over UTF-8 `json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))`. All hashes are lowercase hex; validators and the artifact-manifest builder do not silently lowercase caller-supplied identities. The proof's receipt/device/artifact/precondition identities and test interval must match the receiving receipt, so another test/run/device/artifact cannot be reused by merely rehashing its file.
+
+| Test | Required measurements checked for PASS |
+|---|---|
+| `RD-MIGRATION-01` | Positive integer `schema_before`, greater `schema_after`, positive preserved `records_before`/`records_after`, and equal lowercase `data_before_sha256`/`data_after_sha256` over canonical application records excluding schema metadata. Seed actual authorized data; an empty fixture is not a migration result. |
+| `RD-MEMORY-01` | `pressure_event` = `trim-memory-running-critical` or `low-memory-kill`, `pressure_at` within the test interval, known actual `job_id`, boolean `ledger_preserved=true`, `terminal_state` = `running` or `succeeded`. |
+| `RD-PROCESS-01` | Distinct positive `pid_before`/`pid_after`, `recreated_at` within the interval, equal known `session_before`/`session_after`, and `service_state=ready`. |
+| `RD-LARGE-01` | Exact measured `minimum_dimension_dp` at least 600, matching capability identity, and boolean true for each usable surface `messages`, `composer`, `tabs`, `console-frame`. |
+| Other tests | `observed_state` matching that test's fixed expectation, plus its test-specific named assertion and complete identity/time binding. |
+
+These are structured operator/lab observations, not cryptographic attestation of physical execution. The authorized evidence producer must run the scenario and retain supporting observations. Unit fixtures test validation only and must never be submitted as hardware receipts. No helper in this branch turns absent hardware into a PASS.
+
+The JSON Schema is the portable structural/lexical receipt contract, including every required test ID exactly once and each test's fixed expected/PASS-observed values and permitted evidence kinds. The executable validator additionally checks contextual relationships (matching sibling identities, computed dimensions, event ordering) and external files, which standard JSON Schema cannot compare/read. `test_android_device_schema.py` checks accepted and rejected precondition/hash/timestamp/capability boundary values and the per-test catalog in both paths; it is not a hardware test.
 
 Validate one receipt:
 
@@ -239,6 +281,8 @@ The Build APK workflow runs:
 ```text
 python3 scripts/android_device_matrix.py validate-matrix docs/android-device-matrix.json
 python3 scripts/test_android_device_matrix.py
+python3 scripts/test_android_device_integration.py
+python3 scripts/test_android_device_schema.py
 ```
 
 This is static/schema/semantic validation only. The workflow does not connect to a phone, create an emulator, run `capture`, run `record`, alter package verifier settings, or publish hardware results. The workflow continues to use the existing runtime lock, WebUI pin, signing, artifact and container-smoke conventions.

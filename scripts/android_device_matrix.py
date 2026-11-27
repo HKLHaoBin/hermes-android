@@ -27,6 +27,7 @@ SCHEMA_VERSION = 1
 RECEIPT_KIND = "android-device-acceptance"
 ARTIFACT_KIND = "android-build-artifact"
 REDACTION_POLICY_VERSION = "1"
+EVIDENCE_SCHEMA_VERSION = 1
 EXPECTED_REPOSITORY = "HKLHaoBin/hermes-android"
 EXPECTED_WORKFLOW = "Build APK"
 EXPECTED_ARTIFACT_NAME = "apk"
@@ -86,7 +87,7 @@ TEST_IDS = (
 
 
 def _test_contract(expected: str, *evidence_kinds: str) -> dict[str, Any]:
-    return {"expected": expected, "evidence_kinds": tuple(evidence_kinds)}
+    return {"expected": expected, "evidence_kinds": tuple(dict.fromkeys((*evidence_kinds, "json")))}
 
 
 TEST_CONTRACT = {
@@ -126,6 +127,22 @@ TEST_CONTRACT = {
     "RD-UX-03": _test_contract("Rotation and font scale preserve the expected layout and interaction state.", "layout", "screenshot"),
     "RD-UX-04": _test_contract("Large-screen or split-screen layout preserves the expected usable surfaces.", "layout", "screenshot"),
 }
+
+SCENARIO_CONTRACT = {
+    test_id: {
+        "name": f"issue14:{test_id}",
+        "assertions": (f"{test_id}:expected-state",),
+    }
+    for test_id in TEST_IDS
+}
+SCENARIO_CONTRACT.update(
+    {
+        "RD-MIGRATION-01": {"name": "migration", "assertions": ("data_migration", "schema_version")},
+        "RD-MEMORY-01": {"name": "memory-pressure", "assertions": ("memory_pressure", "job_state")},
+        "RD-PROCESS-01": {"name": "process-recreation", "assertions": ("process_recreation", "service_state")},
+        "RD-LARGE-01": {"name": "large-screen", "assertions": ("capability_identity", "minimum_dimension_dp", "layout_surface")},
+    }
+)
 
 # These are capability slots, not devices.  No model, serial, or result is
 # stored here; an authorized run must provide those values in a receipt.
@@ -176,6 +193,36 @@ _UNKNOWN_LITERALS = {
     "mock",
 }
 _EMULATOR_TRANSPORTS = {"emulator", "test", "mock", "fixture"}
+_PRECONDITION_ENUMS = {
+    "install_mode": ("installed",),
+    "notification_permission": ("allow", "deny", "default"),
+    "battery_optimization": ("optimized", "exempt"),
+    "network_mode": ("connected", "disconnected", "airplane"),
+    "screen_state": ("interactive", "non-interactive"),
+}
+_PRECONDITION_SOURCES = {
+    "install_mode": "adb:pm-path",
+    "notification_permission": "adb:appops",
+    "battery_optimization": "adb:deviceidle",
+    "network_mode": "adb:connectivity",
+    "screen_state": "adb:power",
+    "backend_id": "operator-authorization",
+}
+_RAW_SERIAL_VALUE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:raw[_ .-]?)?(?:device[_ .-]?)?serial(?:[_ .-]?(?:number|no))?[\"']?\s*[:=]\s*[\"']?[^\"'\s,}]+"
+    r"|\badb\s+-s\s+\S+|^\s*\S+\s+(?:device|unauthorized|offline)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_INSTALLED_PATH = re.compile(r"^(?!.*(?:^|/)\.\.(?:/|$))/(?:data/app|product/app|system/app|system/priv-app)/[^\r\n]+\.apk(?![\s\S])")
+_EVIDENCE_PATH = re.compile(r"^(?!/)(?![A-Za-z]:)(?!.*(?:^|/)\.\.(?:/|$))[^\\\r\n]+(?![\s\S])")
+_KNOWN_PRECONDITION_PATTERN = (
+    r"^(?!.*[uU][nN][kK][nN][oO][wW][nN])"
+    r"(?!.*(?:^|[-_\s])(?:[nN]/?[aA]|[nN][oO][nN][eE]|[nN][uU][lL][lL]|[uU][nN][sS][eE][tT]|"
+    r"[fF][iI][xX][tT][uU][rR][eE]|[mM][oO][cC][kK]|[tT][eE][sS][tT][-_ ]?[oO][nN][lL][yY]|"
+    r"[nN][oO][tT][-_ ]+[aA][vV][aA][iI][lL][aA][bB][lL][eE]|"
+    r"[oO][pP][eE][rR][aA][tT][oO][rR]-[sS][eE][tT]-[bB][eE][fF][oO][rR][eE]-[rR][uU][nN])(?:$|[-_\s]))"
+    r"(?=\S)(?=.*\S$).+(?![\s\S])"
+)
 
 EXIT_PASS = 0
 EXIT_FAIL = 1
@@ -216,11 +263,8 @@ def _known_identity(value: Any, name: str, errors: list[str]) -> None:
 
 def _known_precondition(value: Any, name: str, errors: list[str]) -> None:
     _non_empty(value, name, errors)
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        placeholder = re.search(r"(?:^|[-_\s])(?:n/?a|na|none|null|unset|fixture|test[-_ ]?only)(?:$|[-_\s])", normalized)
-        if normalized in _UNKNOWN_LITERALS or "unknown" in normalized or placeholder:
-            errors.append(f"{name} must be known before a release PASS")
+    if isinstance(value, str) and not re.fullmatch(_KNOWN_PRECONDITION_PATTERN, value):
+        errors.append(f"{name} must be known before a release PASS")
 
 
 def _parse_installed_package_path(text: str) -> str:
@@ -283,7 +327,7 @@ def _object_shape(
 
 def _sha(value: Any, name: str, errors: list[str], *, length: int = 64) -> None:
     pattern = _SHA256 if length == 64 else _SHA1
-    if not isinstance(value, str) or not pattern.fullmatch(value.lower()):
+    if not isinstance(value, str) or not pattern.fullmatch(value):
         errors.append(f"{name} must be lowercase hexadecimal SHA-{length * 4}")
 
 
@@ -303,7 +347,7 @@ def _redaction_findings(value: Any, path: str = "$") -> list[str]:
         for key, child in value.items():
             key_text = str(key)
             key_lower = key_text.lower()
-            if key_lower == "serial":
+            if key_lower.replace("-", "_").replace(".", "_") in {"serial", "raw_serial", "device_serial", "serial_number", "serialno", "ro_serialno", "ro_boot_serialno"}:
                 findings.append(f"redaction: {path}.{key_text}: raw serial is forbidden; store serial_sha256 and serial_suffix")
             elif key_lower not in _SAFE_REDACTION_KEYS and _SECRET_KEY.search(key_lower):
                 findings.append(f"redaction: {path}.{key_text}: secret-like field name is forbidden")
@@ -311,19 +355,31 @@ def _redaction_findings(value: Any, path: str = "$") -> list[str]:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             findings.extend(_redaction_findings(child, f"{path}[{index}]"))
-    elif isinstance(value, str) and _SECRET_VALUE.search(value):
-        findings.append(f"redaction: {path}: secret-like value is forbidden")
+    elif isinstance(value, str):
+        if _SECRET_VALUE.search(value):
+            findings.append(f"redaction: {path}: secret-like value is forbidden")
+        if _RAW_SERIAL_VALUE.search(value):
+            findings.append(f"redaction: {path}: raw serial assignment/ADB output is forbidden")
     return findings
 
 
-def _evidence_content_findings(data: bytes, path: str) -> list[str]:
+def _evidence_content_findings(data: bytes, path: str, serial_sha256: str | None = None) -> list[str]:
     text = data.decode("utf-8", errors="replace")
-    return _redaction_findings(text, path)
+    findings = _redaction_findings(text, path)
+    if serial_sha256 and any(
+        hashlib.sha256(token.encode("utf-8")).hexdigest() == serial_sha256
+        for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9._:-]{3,127}", text)
+    ):
+        findings.append(f"redaction: {path}: unredacted device serial matches receipt identity")
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return findings
+    return findings + _redaction_findings(parsed, path)
 
 
 def _relative_evidence_path(path: str) -> bool:
-    candidate = Path(path)
-    return not candidate.is_absolute() and ".." not in candidate.parts
+    return _EVIDENCE_PATH.fullmatch(path) is not None
 
 
 def _evidence_errors(
@@ -331,6 +387,7 @@ def _evidence_errors(
     *,
     allowed_kinds: tuple[str, ...],
     receipt_root: Path | None = None,
+    receipt: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     evidence = test.get("evidence")
@@ -355,7 +412,9 @@ def _evidence_errors(
             errors.append(f"{prefix}.kind must be one of {allowed_kinds} for {test.get('id')}")
         if receipt_root is not None and isinstance(item.get("path"), str) and _relative_evidence_path(item["path"]):
             evidence_path = receipt_root / item["path"]
-            if not evidence_path.is_file():
+            if not evidence_path.resolve().is_relative_to(receipt_root.resolve()):
+                errors.append(f"{prefix}.path must stay under the receipt directory after resolving links")
+            elif not evidence_path.is_file():
                 errors.append(f"{prefix}.path does not exist: {item['path']}")
             else:
                 data = evidence_path.read_bytes()
@@ -363,7 +422,12 @@ def _evidence_errors(
                     errors.append(f"{prefix}.path must reference non-empty evidence: {item['path']}")
                 if sha256_file(evidence_path) != item.get("sha256"):
                     errors.append(f"{prefix}.sha256 does not match file: {item['path']}")
-                errors.extend(_evidence_content_findings(data, f"{prefix}.bytes"))
+                serial_sha256 = receipt.get("device", {}).get("serial_sha256") if receipt else None
+                errors.extend(_evidence_content_findings(data, f"{prefix}.bytes", serial_sha256))
+                if item.get("kind") == "json" and receipt is not None:
+                    errors.extend(_structured_evidence_errors(data, f"{prefix}.bytes", item=item, test=test, receipt=receipt))
+    if test.get("status") == "PASS" and not any(isinstance(item, dict) and item.get("kind") == "json" for item in evidence):
+        errors.append(f"{test.get('id', '<unknown>')}.PASS requires a structured JSON evidence proof")
     return errors
 
 
@@ -435,7 +499,7 @@ def _validate_installed_apk(value: Any, name: str, errors: list[str]) -> bool:
     package_path = value.get("package_path")
     _non_empty(package_path, f"{name}.package_path", errors)
     if isinstance(package_path, str):
-        if ".." in package_path.split("/") or not re.fullmatch(r"/(?:data/app|product/app|system/app|system/priv-app)/.+\.apk", package_path):
+        if ".." in package_path.split("/") or not _INSTALLED_PATH.fullmatch(package_path):
             errors.append(f"{name}.package_path must be an installed Android package APK path")
     _sha(value.get("sha256"), f"{name}.sha256", errors)
     for field in ("application_id", "version_name"):
@@ -445,6 +509,250 @@ def _validate_installed_apk(value: Any, name: str, errors: list[str]) -> bool:
     if type(value.get("version_code")) is not int or value["version_code"] <= 0:
         errors.append(f"{name}.version_code must be a positive integer")
     return True
+
+
+def _stable_digest(value: Any) -> str:
+    encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _device_identity_digest(device: dict[str, Any]) -> str:
+    return _stable_digest(device)
+
+
+def _artifact_identity_digest(artifact: dict[str, Any]) -> str:
+    return _stable_digest(artifact_identity(artifact))
+
+
+def _is_large_screen_capability(capability: Any) -> bool:
+    if not isinstance(capability, dict):
+        return False
+    minimum = capability.get("minimum_dimension_dp")
+    return (
+        type(minimum) is int and minimum >= 600
+        and capability.get("kind") == "large-screen"
+        and capability.get("source") == "adb:wm"
+    )
+
+
+def _validate_screen_capability(value: Any, display: dict[str, Any], name: str, errors: list[str]) -> bool:
+    required = {"kind", "minimum_dimension_dp", "source"}
+    if not _object_shape(value, name, required=required, allowed=required, errors=errors):
+        return False
+    if value.get("kind") not in ("phone", "large-screen"):
+        errors.append(f"{name}.kind must be phone or large-screen")
+    minimum = value.get("minimum_dimension_dp")
+    if type(minimum) is not int or minimum <= 0:
+        errors.append(f"{name}.minimum_dimension_dp must be a positive integer")
+    dimensions = [display.get(field) for field in ("width", "height", "density")]
+    if all(type(number) is int and number > 0 for number in dimensions):
+        measured = min(display["width"], display["height"]) * 160 // display["density"]
+        if minimum != measured:
+            errors.append(f"{name}.minimum_dimension_dp does not match the measured display/density")
+        if value.get("kind") != ("large-screen" if measured >= 600 else "phone"):
+            errors.append(f"{name}.kind does not match the measured 600dp large-screen predicate")
+    if value.get("source") != "adb:wm":
+        errors.append(f"{name}.source must be adb:wm")
+    return True
+
+
+def _validate_precondition_record(value: Any, name: str, field: str, errors: list[str]) -> bool:
+    required = {"value", "source", "observed_at", "evidence"}
+    if not _object_shape(value, name, required=required, allowed=required, errors=errors):
+        return False
+    allowed_values = _PRECONDITION_ENUMS.get(field)
+    if allowed_values is not None:
+        if value.get("value") not in allowed_values:
+            errors.append(f"{name}.value must be one of {allowed_values}")
+    else:
+        _known_precondition(value.get("value"), f"{name}.value", errors)
+    if value.get("source") != _PRECONDITION_SOURCES[field]:
+        errors.append(f"{name}.source must be {_PRECONDITION_SOURCES[field]}")
+    _timestamp(value.get("observed_at"), f"{name}.observed_at", errors)
+    _non_empty(value.get("evidence"), f"{name}.evidence", errors)
+    if field == "install_mode":
+        if not isinstance(value.get("evidence"), str) or not _INSTALLED_PATH.fullmatch(value["evidence"]):
+            errors.append(f"{name}.evidence must be an observed installed APK path")
+    elif field == "screen_state":
+        states = {"mWakefulness=Awake": "interactive", "mWakefulness=Asleep": "non-interactive",
+                  "mWakefulness=Dozing": "non-interactive", "mWakefulness=Dreaming": "interactive"}
+        if not isinstance(value.get("evidence"), str) or states.get(value["evidence"]) != value.get("value"):
+            errors.append(f"{name}.evidence must substantiate the observed screen state")
+    elif value.get("evidence") != value.get("value"):
+        errors.append(f"{name}.evidence must match the captured value")
+    return True
+
+
+def _scenario_measurement_errors(test_id: str, measurements: Any, receipt: dict[str, Any], started: Any, finished: Any) -> list[str]:
+    errors: list[str] = []
+    required_by_test = {
+        "RD-MIGRATION-01": {"schema_before", "schema_after", "records_before", "records_after", "data_before_sha256", "data_after_sha256"},
+        "RD-MEMORY-01": {"pressure_event", "pressure_at", "job_id", "ledger_preserved", "terminal_state"},
+        "RD-PROCESS-01": {"pid_before", "pid_after", "recreated_at", "session_before", "session_after", "service_state"},
+        "RD-LARGE-01": {"minimum_dimension_dp", "surfaces"},
+    }
+    required = required_by_test.get(test_id, {"observed_state"})
+    if not _object_shape(measurements, f"{test_id}.measurements", required=required, allowed=required, errors=errors):
+        return errors
+    if set(measurements) != required:
+        return errors
+    if test_id == "RD-MIGRATION-01":
+        for field in ("schema_before", "schema_after", "records_before", "records_after"):
+            if type(measurements[field]) is not int or measurements[field] <= 0:
+                errors.append(f"{test_id}.measurements.{field} must be a positive integer")
+        if not errors and (measurements["schema_after"] <= measurements["schema_before"] or measurements["records_before"] != measurements["records_after"]):
+            errors.append(f"{test_id}.measurements must show a schema advance and preserved records")
+        for field in ("data_before_sha256", "data_after_sha256"):
+            _sha(measurements[field], f"{test_id}.measurements.{field}", errors)
+        if measurements["data_before_sha256"] != measurements["data_after_sha256"]:
+            errors.append(f"{test_id}.measurements must preserve the migrated data digest")
+    elif test_id == "RD-MEMORY-01":
+        if measurements["pressure_event"] not in ("trim-memory-running-critical", "low-memory-kill"):
+            errors.append(f"{test_id}.measurements requires an actual memory-pressure event")
+        _known_precondition(measurements["job_id"], f"{test_id}.measurements.job_id", errors)
+        if measurements["ledger_preserved"] is not True or measurements["terminal_state"] not in ("running", "succeeded"):
+            errors.append(f"{test_id}.measurements must show preserved ledger/job state")
+    elif test_id == "RD-PROCESS-01":
+        for field in ("pid_before", "pid_after"):
+            if type(measurements[field]) is not int or measurements[field] <= 0:
+                errors.append(f"{test_id}.measurements.{field} must be a positive integer")
+        if measurements["pid_before"] == measurements["pid_after"]:
+            errors.append(f"{test_id}.measurements must show different process identities")
+        for field in ("session_before", "session_after"):
+            _known_precondition(measurements[field], f"{test_id}.measurements.{field}", errors)
+        if measurements["session_before"] != measurements["session_after"] or measurements["service_state"] != "ready":
+            errors.append(f"{test_id}.measurements must show restored session/service state")
+    elif test_id == "RD-LARGE-01":
+        capability = receipt.get("device", {}).get("screen_capability")
+        if not _is_large_screen_capability(capability):
+            errors.append("RD-LARGE-01 requires measured large-screen capability in the tested posture")
+        if type(measurements["minimum_dimension_dp"]) is not int or not isinstance(capability, dict) or measurements["minimum_dimension_dp"] != capability.get("minimum_dimension_dp"):
+            errors.append("RD-LARGE-01 measurements must bind the exact measured capability dimension")
+        if not isinstance(measurements["surfaces"], dict) or set(measurements["surfaces"]) != {"messages", "composer", "tabs", "console-frame"} or any(value is not True for value in measurements["surfaces"].values()):
+            errors.append("RD-LARGE-01 measurements must show all required usable layout surfaces")
+    elif measurements["observed_state"] != TEST_CONTRACT[test_id]["expected"]:
+        errors.append(f"{test_id}.measurements.observed_state must match the test-specific expected state")
+    for field in ("pressure_at", "recreated_at"):
+        if field in measurements:
+            _timestamp(measurements[field], f"{test_id}.measurements.{field}", errors)
+            if isinstance(measurements[field], str) and isinstance(started, str) and isinstance(finished, str):
+                try:
+                    if not datetime.fromisoformat(started.replace("Z", "+00:00")) <= datetime.fromisoformat(measurements[field].replace("Z", "+00:00")) <= datetime.fromisoformat(finished.replace("Z", "+00:00")):
+                        errors.append(f"{test_id}.measurements.{field} must be inside the test interval")
+                except (ValueError, TypeError):
+                    pass
+    return errors
+
+
+def _structured_evidence_errors(
+    data: bytes,
+    path: str,
+    *,
+    item: dict[str, Any],
+    test: dict[str, Any],
+    receipt: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    try:
+        envelope = json.loads(data.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return [f"{test.get('id')}.evidence must contain a structured JSON proof envelope: {path}"]
+    if not isinstance(envelope, dict):
+        return [f"{test.get('id')}.evidence JSON proof envelope must be an object: {path}"]
+    required = {
+        "evidence_schema_version",
+        "kind",
+        "test_id",
+        "receipt_id",
+        "expected",
+        "observed",
+        "device",
+        "artifact",
+        "scenario",
+        "assertions",
+        "measurements",
+        "preconditions_sha256",
+        "started_at",
+        "finished_at",
+    }
+    if test.get("id") == "RD-LARGE-01":
+        required.add("capability")
+    allowed = required
+    errors.extend(f"{test.get('id')}.structured_evidence missing field {field}" for field in sorted(required - set(envelope)))
+    errors.extend(f"{test.get('id')}.structured_evidence contains undeclared field {field}" for field in sorted(set(envelope) - allowed))
+    if errors:
+        return errors
+    if type(envelope.get("evidence_schema_version")) is not int or envelope.get("evidence_schema_version") != EVIDENCE_SCHEMA_VERSION:
+        errors.append(f"{test.get('id')}.structured_evidence.evidence_schema_version is invalid")
+    if envelope.get("kind") != item.get("kind") or envelope.get("kind") != "json":
+        errors.append(f"{test.get('id')}.structured_evidence.kind must be json and match the receipt evidence item")
+    if envelope.get("test_id") != test.get("id"):
+        errors.append(f"{test.get('id')}.structured_evidence.test_id must match the receipt test")
+    if envelope.get("receipt_id") != receipt.get("receipt_id"):
+        errors.append(f"{test.get('id')}.structured_evidence.receipt_id must match the receipt")
+    if envelope.get("expected") != test.get("expected") or envelope.get("observed") != test.get("observed"):
+        errors.append(f"{test.get('id')}.structured_evidence expected/observed must match the receipt test")
+    for field in ("started_at", "finished_at"):
+        _timestamp(envelope.get(field), f"{test.get('id')}.structured_evidence.{field}", errors)
+        if envelope.get(field) != test.get(field):
+            errors.append(f"{test.get('id')}.structured_evidence.{field} must match the receipt test")
+    if envelope.get("preconditions_sha256") != _stable_digest(receipt.get("preconditions")):
+        errors.append(f"{test.get('id')}.structured_evidence.preconditions_sha256 is not bound to the captured preconditions")
+    device = receipt.get("device")
+    evidence_device = envelope.get("device")
+    if not isinstance(device, dict) or not isinstance(evidence_device, dict):
+        errors.append(f"{test.get('id')}.structured_evidence.device must be an object")
+    else:
+        expected_device = {
+            "slot_id": device.get("slot_id"),
+            "device_id": device.get("device_id"),
+            "serial_sha256": device.get("serial_sha256"),
+            "identity_sha256": _device_identity_digest(device),
+        }
+        if evidence_device != expected_device:
+            errors.append(f"{test.get('id')}.structured_evidence.device is not bound to the receipt device")
+    artifact = receipt.get("artifact")
+    evidence_artifact = envelope.get("artifact")
+    if not isinstance(artifact, dict) or not isinstance(evidence_artifact, dict):
+        errors.append(f"{test.get('id')}.structured_evidence.artifact must be an object")
+    elif not validate_artifact(artifact):
+        expected_artifact = {
+            "filename": artifact.get("apk", {}).get("filename"),
+            "sha256": artifact.get("apk", {}).get("sha256"),
+            "identity_sha256": _artifact_identity_digest(artifact),
+        }
+        if evidence_artifact != expected_artifact:
+            errors.append(f"{test.get('id')}.structured_evidence.artifact is not bound to the receipt artifact")
+    scenario_contract = SCENARIO_CONTRACT[test["id"]]
+    scenario = envelope.get("scenario")
+    if not isinstance(scenario, dict) or set(scenario) != {"name"}:
+        errors.append(f"{test.get('id')}.structured_evidence.scenario must contain only name")
+    elif scenario.get("name") != scenario_contract["name"]:
+        errors.append(f"{test.get('id')}.structured_evidence.scenario.name is not test-specific")
+    assertions = envelope.get("assertions")
+    if not isinstance(assertions, list):
+        errors.append(f"{test.get('id')}.structured_evidence.assertions must be an array")
+    else:
+        expected_names = set(scenario_contract["assertions"])
+        actual_names = [entry.get("name") for entry in assertions if isinstance(entry, dict)]
+        if not all(isinstance(name, str) for name in actual_names) or sorted(str(name) for name in actual_names) != sorted(expected_names):
+            errors.append(f"{test.get('id')}.structured_evidence.assertions must equal the scenario contract")
+        for entry in assertions:
+            if not isinstance(entry, dict) or set(entry) != {"name", "expected", "observed", "passed"}:
+                errors.append(f"{test.get('id')}.structured_evidence assertions have an invalid shape")
+                continue
+            if entry["expected"] != TEST_CONTRACT[test["id"]]["expected"] or (test.get("status") == "PASS" and entry["observed"] != entry["expected"]):
+                errors.append(f"{test.get('id')}.structured_evidence assertion values must substantiate the fixed test contract")
+            if not isinstance(entry["passed"], bool):
+                errors.append(f"{test.get('id')}.structured_evidence assertion passed must be boolean")
+            elif test.get("status") == "PASS" and entry["passed"] is not True:
+                errors.append(f"{test.get('id')}.structured_evidence PASS assertions must pass")
+    if test.get("status") == "PASS":
+        errors.extend(_scenario_measurement_errors(test["id"], envelope.get("measurements"), receipt, envelope.get("started_at"), envelope.get("finished_at")))
+    if test.get("id") == "RD-LARGE-01":
+        if not isinstance(device, dict) or envelope.get("capability") != device.get("screen_capability"):
+            errors.append("RD-LARGE-01 structured evidence capability does not match the receipt device")
+    return errors
 
 
 def validate_artifact(artifact: Any) -> list[str]:
@@ -538,6 +846,7 @@ def validate_device(device: Any) -> list[str]:
         "transport",
         "webview",
         "display",
+        "screen_capability",
         "input",
         "battery",
         "notification_permission",
@@ -597,6 +906,11 @@ def validate_device(device: Any) -> list[str]:
         for field in ("width", "height", "density"):
             if type(display.get(field)) is not int or display[field] <= 0:
                 errors.append(f"device.display.{field} must be a positive integer")
+    if isinstance(display, dict):
+        capability = device.get("screen_capability")
+        _validate_screen_capability(capability, display, "device.screen_capability", errors)
+        if device.get("slot_id") == "Large-screen" and not _is_large_screen_capability(capability):
+            errors.append("device assigned to Large-screen must satisfy the measurable large-screen/foldable predicate")
     input_info = device.get("input")
     if _object_shape(
         input_info,
@@ -629,8 +943,9 @@ def validate_device(device: Any) -> list[str]:
         allowed={"mode", "backend_id"},
         errors=errors,
     ):
-        _known_precondition(network.get("mode"), "device.network.mode", errors)
-        _non_empty(network.get("backend_id"), "device.network.backend_id", errors)
+        if network.get("mode") not in _PRECONDITION_ENUMS["network_mode"]:
+            errors.append("device.network.mode must be connected, disconnected or airplane")
+        _known_precondition(network.get("backend_id"), "device.network.backend_id", errors)
     return errors
 
 
@@ -640,6 +955,7 @@ def _validate_test(
     *,
     artifact_apk: dict[str, Any] | None,
     receipt_root: Path | None = None,
+    receipt: dict[str, Any] | None = None,
 ) -> list[str]:
     errors: list[str] = []
     required = {
@@ -690,7 +1006,7 @@ def _validate_test(
                 errors.append(f"{expected_id}.installed_apk.{field} must match receipt.artifact.apk")
     if not isinstance(test.get("redaction_checked"), bool) or test.get("redaction_checked") is not True:
         errors.append(f"{expected_id}.redaction_checked must be true")
-    errors.extend(_evidence_errors(test, allowed_kinds=contract["evidence_kinds"], receipt_root=receipt_root))
+    errors.extend(_evidence_errors(test, allowed_kinds=contract["evidence_kinds"], receipt_root=receipt_root, receipt=receipt))
     if status in {"PASS", "FAIL"} and not test.get("evidence"):
         errors.append(f"{expected_id}.evidence is required for {status}")
     if status == "NOT RUN" and test.get("evidence"):
@@ -700,6 +1016,12 @@ def _validate_test(
             _timestamp(test.get(field), f"{expected_id}.{field}", errors)
         elif status in {"PASS", "FAIL"}:
             _timestamp(test.get(field), f"{expected_id}.{field}", errors)
+    if status in {"PASS", "FAIL"} and isinstance(test.get("started_at"), str) and isinstance(test.get("finished_at"), str):
+        try:
+            if datetime.fromisoformat(test["started_at"].replace("Z", "+00:00")) > datetime.fromisoformat(test["finished_at"].replace("Z", "+00:00")):
+                errors.append(f"{expected_id} test timestamps must be in chronological order")
+        except (ValueError, TypeError):
+            pass
     return errors
 
 
@@ -754,7 +1076,19 @@ def validate_receipt(
         errors=errors,
     ):
         for field in ("install_mode", "notification_permission", "battery_optimization", "network_mode", "screen_state", "backend_id"):
-            _known_precondition(preconditions.get(field), f"preconditions.{field}", errors)
+            _validate_precondition_record(preconditions.get(field), f"preconditions.{field}", field, errors)
+        device = receipt.get("device")
+        if isinstance(device, dict):
+            captured_values = {
+                "notification_permission": device.get("notification_permission"),
+                "battery_optimization": device.get("battery", {}).get("optimization") if isinstance(device.get("battery"), dict) else None,
+                "network_mode": device.get("network", {}).get("mode") if isinstance(device.get("network"), dict) else None,
+                "backend_id": device.get("network", {}).get("backend_id") if isinstance(device.get("network"), dict) else None,
+            }
+            for field, captured_value in captured_values.items():
+                record = preconditions.get(field)
+                if isinstance(record, dict) and record.get("value") != captured_value:
+                    errors.append(f"preconditions.{field}.value must match captured device metadata")
     redaction = receipt.get("redaction")
     if _object_shape(
         redaction,
@@ -803,8 +1137,13 @@ def validate_receipt(
                     test_id,
                     artifact_apk=artifact_apk,
                     receipt_root=receipt_root if check_evidence else None,
+                    receipt=receipt,
                 )
             )
+            installed = by_id[test_id].get("installed_apk")
+            install_precondition = preconditions.get("install_mode") if isinstance(preconditions, dict) else None
+            if isinstance(installed, dict) and isinstance(install_precondition, dict) and installed.get("package_path") != install_precondition.get("evidence"):
+                errors.append(f"{test_id}.installed_apk.package_path must match the captured install precondition evidence")
     statuses = [by_id[test_id].get("status") for test_id in expected_ids if test_id in by_id]
     computed = aggregate_status(statuses)
     if receipt.get("aggregate_status") != computed:
@@ -960,22 +1299,22 @@ def build_artifact_manifest(
             "application_id": application_id,
             "version_name": version_name,
             "version_code": version_code,
-            "signer_sha256": signer_sha256.lower(),
+            "signer_sha256": signer_sha256,
         },
         "build": {
             "repository": _resolve_repository(repository, owner, repo),
             "workflow": workflow,
             "artifact_name": artifact_name,
             "run_id": build_run_id,
-            "head_sha": head_sha.lower(),
+            "head_sha": head_sha,
         },
         "runtime": {
             "version": runtime_version,
-            "sha256": runtime_sha256.lower(),
-            "source_commit": runtime_source_commit.lower(),
+            "sha256": runtime_sha256,
+            "source_commit": runtime_source_commit,
             "payload_id": payload_id,
         },
-        "webui_revision": webui_revision.lower(),
+        "webui_revision": webui_revision,
     }
     errors = validate_artifact(manifest)
     if errors:
@@ -1035,17 +1374,17 @@ def _first_abi(value: str) -> str:
 
 
 def _parse_display(text: str) -> tuple[int, int]:
-    match = re.search(r"(\d+)x(\d+)", text)
-    if not match:
+    matches = re.findall(r"(?:Physical|Override) size:\s*(\d+)x(\d+)", text)
+    if not matches:
         raise BlockedError("cannot capture exact device display size")
-    return int(match.group(1)), int(match.group(2))
+    return int(matches[-1][0]), int(matches[-1][1])
 
 
 def _parse_density(text: str) -> int:
-    match = re.search(r"(\d+)", text)
-    if not match:
+    matches = re.findall(r"(?:Physical|Override) density:\s*(\d+)", text)
+    if not matches or int(matches[-1]) <= 0:
         raise BlockedError("cannot capture exact device density")
-    return int(match.group(1))
+    return int(matches[-1])
 
 
 def _parse_webview(text: str) -> dict[str, str]:
@@ -1130,6 +1469,27 @@ def _network_mode(adb: str, serial: str) -> str:
     return "unknown"
 
 
+def _screen_state(adb: str, serial: str) -> tuple[str, str]:
+    raw = _run_adb(adb, serial, "shell", "dumpsys", "power")
+    match = re.search(r"\bmWakefulness=(Awake|Asleep|Dozing|Dreaming)\b", raw)
+    if not match:
+        raise BlockedError("cannot capture exact screen wakefulness")
+    return ("interactive" if match.group(1) in ("Awake", "Dreaming") else "non-interactive", match.group(0))
+
+
+def _screen_capability(width: int, height: int, density: int) -> dict[str, Any]:
+    minimum_dp = min(width, height) * 160 // density
+    return {
+        "kind": "large-screen" if minimum_dp >= 600 else "phone",
+        "minimum_dimension_dp": minimum_dp,
+        "source": "adb:wm",
+    }
+
+
+def _precondition_record(value: str, field: str, evidence: str | None = None) -> dict[str, str]:
+    return {"value": value, "source": _PRECONDITION_SOURCES[field], "observed_at": utc_now(), "evidence": value if evidence is None else evidence}
+
+
 def capture_receipt(
     *,
     artifact: dict[str, Any],
@@ -1208,6 +1568,10 @@ def capture_receipt(
     notification_permission = _notification_permission(adb, serial, package)
     airplane = _run_adb(adb, serial, "shell", "settings", "get", "global", "airplane_mode_on").strip()
     network_mode = "airplane" if airplane == "1" else _network_mode(adb, serial)
+    screen_state, screen_evidence = _screen_state(adb, serial)
+    screen_capability = _screen_capability(width, height, density)
+    if slot_id == "Large-screen" and not _is_large_screen_capability(screen_capability):
+        raise BlockedError("Large-screen capture requires a measured minimum display dimension of at least 600dp")
     receipt = {
         "receipt_kind": RECEIPT_KIND,
         "schema_version": SCHEMA_VERSION,
@@ -1235,6 +1599,7 @@ def capture_receipt(
             "transport": _transport_for_serial(serial),
             "webview": webview,
             "display": {"width": width, "height": height, "density": density},
+            "screen_capability": screen_capability,
             "input": {
                 "ime": default_ime,
                 "talkback": "talkback" in enabled_services.lower(),
@@ -1245,12 +1610,12 @@ def capture_receipt(
         },
         "artifact": artifact,
         "preconditions": {
-            "install_mode": "operator-set-before-run",
-            "notification_permission": notification_permission,
-            "battery_optimization": battery_optimization,
-            "network_mode": network_mode,
-            "screen_state": "operator-set-before-run",
-            "backend_id": backend_id,
+            "install_mode": _precondition_record("installed", "install_mode", installed_apk["package_path"]),
+            "notification_permission": _precondition_record(notification_permission, "notification_permission"),
+            "battery_optimization": _precondition_record(battery_optimization, "battery_optimization"),
+            "network_mode": _precondition_record(network_mode, "network_mode"),
+            "screen_state": _precondition_record(screen_state, "screen_state", screen_evidence),
+            "backend_id": _precondition_record(backend_id, "backend_id"),
         },
         "tests": [
             {
@@ -1275,9 +1640,7 @@ def capture_receipt(
     }
     errors = validate_receipt(receipt, matrix_data)
     if errors:
-        if any("unknown" in error.lower() or "must be known" in error.lower() for error in errors):
-            raise BlockedError("device capture has unknown or incomplete release preconditions:\n- " + "\n- ".join(errors))
-        raise HarnessError("captured receipt failed validation:\n- " + "\n- ".join(errors))
+        raise BlockedError("device capture has unknown or incomplete release preconditions:\n- " + "\n- ".join(errors))
     _write_json_atomic(output, receipt)
     return receipt
 
@@ -1319,7 +1682,7 @@ def record_test(
         if not resolved.is_file():
             raise HarnessError(f"evidence does not exist: {path}")
         data = resolved.read_bytes()
-        evidence_redaction_errors.extend(_evidence_content_findings(data, str(resolved)))
+        evidence_redaction_errors.extend(_evidence_content_findings(data, str(resolved), receipt.get("device", {}).get("serial_sha256")))
         evidence.append({
             "path": relative.as_posix(),
             "sha256": hashlib.sha256(data).hexdigest(),
@@ -1343,7 +1706,14 @@ def record_test(
             "redaction_checked": not evidence_redaction_errors,
         }
     )
-    if status in {"PASS", "FAIL"}:
+    if status == "PASS":
+        proofs = [path for path, kind in zip(evidence_paths, kinds) if kind == "json"]
+        if not proofs:
+            raise HarnessError(f"{test_id}.PASS requires a structured JSON evidence proof")
+        proof = load_json(proofs[0])
+        for field in ("started_at", "finished_at"):
+            test[field] = proof.get(field)
+    elif status == "FAIL":
         test["started_at"] = test.get("started_at", utc_now())
         test["finished_at"] = utc_now()
     else:

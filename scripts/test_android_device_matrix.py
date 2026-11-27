@@ -9,6 +9,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -64,6 +65,44 @@ def installed_apk_fixture(artifact=None) -> dict:
     }
 
 
+def precondition_fixture(field: str, value: str, evidence: str | None = None) -> dict:
+    return {
+        "value": value, "source": matrix._PRECONDITION_SOURCES[field],
+        "observed_at": "2026-11-26T00:00:00Z", "evidence": value if evidence is None else evidence,
+    }
+
+
+def proof_fixture(receipt, test):
+    test_id = test["id"]
+    expected = matrix.TEST_CONTRACT[test_id]["expected"]
+    measurements = {
+        "RD-MIGRATION-01": {"schema_before": 1, "schema_after": 2, "records_before": 3, "records_after": 3,
+                            "data_before_sha256": "4" * 64, "data_after_sha256": "4" * 64},
+        "RD-MEMORY-01": {"pressure_event": "trim-memory-running-critical", "pressure_at": "2026-11-26T00:00:30Z",
+                         "job_id": "job-123", "ledger_preserved": True, "terminal_state": "running"},
+        "RD-PROCESS-01": {"pid_before": 101, "pid_after": 102, "recreated_at": "2026-11-26T00:00:30Z",
+                          "session_before": "session-123", "session_after": "session-123", "service_state": "ready"},
+        "RD-LARGE-01": {"minimum_dimension_dp": receipt["device"]["screen_capability"]["minimum_dimension_dp"],
+                        "surfaces": {"messages": True, "composer": True, "tabs": True, "console-frame": True}},
+    }.get(test_id, {"observed_state": expected})
+    result = {
+        "evidence_schema_version": matrix.EVIDENCE_SCHEMA_VERSION, "kind": "json", "test_id": test_id,
+        "receipt_id": receipt["receipt_id"], "expected": expected, "observed": expected,
+        "device": {"slot_id": receipt["device"]["slot_id"], "device_id": receipt["device"]["device_id"],
+                   "serial_sha256": receipt["device"]["serial_sha256"], "identity_sha256": matrix._device_identity_digest(receipt["device"])},
+        "artifact": {"filename": receipt["artifact"]["apk"]["filename"], "sha256": receipt["artifact"]["apk"]["sha256"],
+                     "identity_sha256": matrix._artifact_identity_digest(receipt["artifact"])},
+        "preconditions_sha256": matrix._stable_digest(receipt["preconditions"]),
+        "scenario": {"name": matrix.SCENARIO_CONTRACT[test_id]["name"]},
+        "assertions": [{"name": name, "expected": expected, "observed": expected, "passed": True}
+                       for name in matrix.SCENARIO_CONTRACT[test_id]["assertions"]],
+        "measurements": measurements,
+        "started_at": "2026-11-26T00:00:00Z", "finished_at": "2026-11-26T00:01:00Z",
+    }
+    if test_id == "RD-LARGE-01":
+        result["capability"] = copy.deepcopy(receipt["device"]["screen_capability"])
+    return result
+
 
 def receipt_fixture() -> dict:
     tests = [
@@ -111,19 +150,20 @@ def receipt_fixture() -> dict:
                 "provider": "com.test.webview",
             },
             "display": {"width": 1080, "height": 2400, "density": 420},
+            "screen_capability": {"kind": "phone", "minimum_dimension_dp": 411, "source": "adb:wm"},
             "input": {"ime": "com.google.android.inputmethod.latin", "talkback": False},
             "battery": {"optimization": "optimized", "oem_policy": "reported-by-deviceidle"},
             "notification_permission": "default",
-            "network": {"mode": "controlled", "backend_id": "controlled-lab"},
+            "network": {"mode": "connected", "backend_id": "controlled-lab"},
         },
         "artifact": artifact_fixture(),
         "preconditions": {
-            "install_mode": "clean",
-            "notification_permission": "default",
-            "battery_optimization": "optimized",
-            "network_mode": "controlled",
-            "screen_state": "unlocked",
-            "backend_id": "controlled-lab",
+            "install_mode": precondition_fixture("install_mode", "installed", installed_apk_fixture()["package_path"]),
+            "notification_permission": precondition_fixture("notification_permission", "default"),
+            "battery_optimization": precondition_fixture("battery_optimization", "optimized"),
+            "network_mode": precondition_fixture("network_mode", "connected"),
+            "screen_state": precondition_fixture("screen_state", "interactive", "mWakefulness=Awake"),
+            "backend_id": precondition_fixture("backend_id", "controlled-lab"),
         },
         "tests": tests,
         "redaction": {
@@ -142,6 +182,8 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         receipt["device"]["slot_id"] = slot_id
         receipt["device"]["api_level"] = slot["api_level"] or 33
         receipt["device"]["oem"] = "Google" if slot["oem"] == "any" else slot["oem"]
+        receipt["device"]["display"] = {"width": 1600, "height": 2560, "density": 320}
+        receipt["device"]["screen_capability"] = {"kind": "large-screen", "minimum_dimension_dp": 800, "source": "adb:wm"}
         receipt["artifact"] = copy.deepcopy(artifact or artifact_fixture())
         for test in receipt["tests"]:
             test.update(
@@ -151,7 +193,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
                 reason="Expected state observed with clean evidence.",
                 failure_class=None,
                 installed_apk=installed_apk_fixture(receipt["artifact"]),
-                evidence=[{"path": f"evidence/{test['id']}.log", "sha256": "a" * 64, "kind": matrix.TEST_CONTRACT[test["id"]]["evidence_kinds"][0]}],
+                evidence=[{"path": f"evidence/{test['id']}.log", "sha256": "a" * 64, "kind": "json"}],
                 started_at="2026-11-26T00:00:00Z",
                 finished_at="2026-11-26T00:01:00Z",
             )
@@ -163,11 +205,11 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         root.mkdir(parents=True, exist_ok=True)
         for test in receipt["tests"]:
             evidence_path = root / f"{test['id']}.log"
-            evidence_path.write_text("clean hardware evidence\n", encoding="utf-8")
+            evidence_path.write_text(json.dumps(proof_fixture(receipt, test)), encoding="utf-8")
             test["evidence"] = [{
                 "path": evidence_path.name,
                 "sha256": hashlib.sha256(evidence_path.read_bytes()).hexdigest(),
-                "kind": matrix.TEST_CONTRACT[test["id"]]["evidence_kinds"][0],
+                "kind": "json",
             }]
         return receipt
 
@@ -202,6 +244,153 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
         for slot in required:
             self.assertNotIn("model", slot)
             self.assertNotIn("serial", slot)
+
+    def test_required_scenarios_reject_unbound_static_json_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "A13-Google"
+            receipt = self._materialize_pass_receipt(root)
+            test = receipt["tests"][0]
+            evidence = root / "RD-ID-01.json"
+            evidence.write_text('{"phase":"running"}\n', encoding="utf-8")
+            test["evidence"] = [{
+                "path": evidence.name,
+                "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+                "kind": "json",
+            }]
+            errors = matrix.validate_receipt(receipt, receipt_root=root, check_evidence=True)
+            self.assertTrue(any("structured" in error or "bound" in error or "scenario" in error for error in errors))
+
+    def test_large_screen_slot_requires_measurable_capability_identity(self):
+        receipt = self._pass_receipt("Large-screen")
+        receipt["device"]["display"] = {"width": 1080, "height": 2400, "density": 420}
+        receipt["device"]["screen_capability"] = {"kind": "phone", "minimum_dimension_dp": 411, "source": "adb:wm"}
+        errors = matrix.validate_receipt(receipt)
+        self.assertTrue(any("large-screen" in error or "screen" in error for error in errors))
+
+    def test_preconditions_require_captured_enum_values_not_operator_reminders(self):
+        receipt = receipt_fixture()
+        receipt["preconditions"]["install_mode"] = "operator-set-before-run"
+        receipt["preconditions"]["screen_state"] = "operator-set-before-run"
+        errors = matrix.validate_receipt(receipt)
+        self.assertTrue(any("install_mode" in error or "screen_state" in error for error in errors))
+
+    def test_structured_json_evidence_rejects_raw_serial_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "A13-Google"
+            receipt = self._materialize_pass_receipt(root)
+            evidence = root / "RD-ID-01.json"
+            evidence.write_text('{"serial":"raw-device-serial"}\n', encoding="utf-8")
+            receipt["tests"][0]["evidence"] = [{
+                "path": evidence.name,
+                "sha256": hashlib.sha256(evidence.read_bytes()).hexdigest(),
+                "kind": "json",
+            }]
+            errors = matrix.validate_receipt(receipt, receipt_root=root, check_evidence=True)
+            self.assertTrue(any("serial" in error.lower() or "redaction" in error.lower() for error in errors))
+
+    def test_schema_and_runtime_both_reject_uppercase_hashes_and_placeholder_preconditions(self):
+        receipt = receipt_fixture()
+        receipt["artifact"]["apk"]["sha256"] = "A" * 64
+        receipt["preconditions"]["install_mode"] = "operator-set-before-run"
+        errors = matrix.validate_receipt(receipt)
+        self.assertTrue(any("sha256" in error for error in errors))
+        schema = json.loads((ROOT / "docs/android-device-receipt.schema.json").read_text(encoding="utf-8"))
+        self.assertIsNone(re.fullmatch(schema["$defs"]["sha256"]["pattern"], "A" * 64))
+        precondition_schema = schema["$defs"]["preconditions"]["properties"]["install_mode"]["properties"]["value"]
+        self.assertIn("enum", precondition_schema)
+        self.assertNotIn("operator-set-before-run", precondition_schema["enum"])
+
+    def test_proof_envelopes_bind_every_required_scenario_to_exact_receipt_device_and_artifact(self):
+        mutations = (
+            ("test_id", "RD-ID-01"), ("receipt_id", "another-run"),
+            ("device.device_id", "another-device"), ("device.identity_sha256", "0" * 64),
+            ("artifact.sha256", "0" * 64), ("artifact.identity_sha256", "0" * 64),
+            ("started_at", "2026-11-25T00:00:00Z"), ("preconditions_sha256", "0" * 64),
+            ("scenario.name", "unrelated-scenario"), ("measurements", {}),
+        )
+        for test_id in ("RD-MIGRATION-01", "RD-MEMORY-01", "RD-PROCESS-01", "RD-LARGE-01"):
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                baseline = self._materialize_pass_receipt(root, "Large-screen")
+                self.assertEqual(matrix.validate_receipt(baseline, receipt_root=root, check_evidence=True), [])
+                for path, value in mutations:
+                    with self.subTest(test_id=test_id, path=path):
+                        receipt = copy.deepcopy(baseline)
+                        test = next(item for item in receipt["tests"] if item["id"] == test_id)
+                        proof = proof_fixture(receipt, test)
+                        parent = proof
+                        keys = path.split(".")
+                        for key in keys[:-1]:
+                            parent = parent[key]
+                        parent[keys[-1]] = value
+                        evidence = root / test["evidence"][0]["path"]
+                        evidence.write_text(json.dumps(proof), encoding="utf-8")
+                        test["evidence"][0]["sha256"] = matrix.sha256_file(evidence)
+                        errors = matrix.validate_receipt(receipt, receipt_root=root, check_evidence=True)
+                        self.assertTrue(any(test_id in error for error in errors), errors)
+
+    def test_scenario_measurements_reject_static_success_flags_and_invalid_lifecycle_observations(self):
+        mutations = {
+            "RD-MIGRATION-01": {"schema_after": 1, "records_after": 2, "data_after_sha256": "5" * 64},
+            "RD-MEMORY-01": {"pressure_event": "passed", "pressure_at": "2026-11-25T00:00:00Z", "ledger_preserved": False},
+            "RD-PROCESS-01": {"pid_after": 101, "session_after": "different-session", "recreated_at": "2026-11-25T00:00:00Z"},
+            "RD-LARGE-01": {"minimum_dimension_dp": 411, "surfaces": {"messages": True}},
+        }
+        for test_id, changes in mutations.items():
+            receipt = self._pass_receipt("Large-screen")
+            test = next(item for item in receipt["tests"] if item["id"] == test_id)
+            for field, value in changes.items():
+                with self.subTest(test_id=test_id, field=field):
+                    proof = proof_fixture(receipt, test)
+                    proof["measurements"][field] = value
+                    errors = matrix._structured_evidence_errors(json.dumps(proof).encode(), "proof.json", item={"kind": "json"}, test=test, receipt=receipt)
+                    self.assertTrue(any(test_id in error for error in errors), errors)
+            proof = proof_fixture(receipt, test)
+            proof["assertions"][0]["passed"] = False
+            self.assertTrue(matrix._structured_evidence_errors(json.dumps(proof).encode(), "proof.json", item={"kind": "json"}, test=test, receipt=receipt))
+
+    def test_large_screen_capability_is_recomputed_not_trusted_and_proof_must_match(self):
+        receipt = self._pass_receipt("Large-screen")
+        receipt["device"]["display"] = {"width": 1080, "height": 2400, "density": 420}
+        self.assertTrue(any("measured" in error for error in matrix.validate_receipt(receipt)))
+        self.assertEqual(matrix._screen_capability(1080, 2400, 420)["kind"], "phone")
+        self.assertEqual(matrix._screen_capability(1440, 3200, 560)["kind"], "phone")
+        receipt = self._pass_receipt("Large-screen")
+        test = next(item for item in receipt["tests"] if item["id"] == "RD-LARGE-01")
+        proof = proof_fixture(receipt, test)
+        proof["capability"]["minimum_dimension_dp"] = 411
+        self.assertTrue(matrix._structured_evidence_errors(json.dumps(proof).encode(), "proof.json", item={"kind": "json"}, test=test, receipt=receipt))
+
+    def test_raw_serial_policy_applies_to_json_nested_fields_text_and_actual_serial_tokens(self):
+        forbidden = (
+            b'{"serial":"raw-device-serial"}', b'{"nested":[{"serial":"raw-device-serial"}]}',
+            b'{"\\u0073erial":"raw-device-serial"}', b'serial=raw-device-serial',
+            b'ro.serialno=raw-device-serial', b'adb -s raw-device-serial shell getprop',
+            b'raw-device-serial\tdevice\n',
+        )
+        for data in forbidden:
+            with self.subTest(data_kind=data[:20]):
+                self.assertTrue(matrix._evidence_content_findings(data, "evidence"))
+        digest = hashlib.sha256(b"ABCD12345678").hexdigest()
+        self.assertTrue(matrix._evidence_content_findings(b"Observed ABCD12345678 in a log.", "evidence", digest))
+        self.assertEqual(matrix._evidence_content_findings(b'{"serial_sha256":"aabb","serial_suffix":"1234"}', "evidence"), [])
+
+    def test_record_rejects_unbound_proof_without_overwriting_the_receipt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            receipt_path = root / "receipt.json"
+            original = json.dumps(receipt_fixture())
+            receipt_path.write_text(original, encoding="utf-8")
+            evidence = root / "unbound.json"
+            evidence.write_text('{"passed":true}', encoding="utf-8")
+            with self.assertRaisesRegex(matrix.HarnessError, "structured"):
+                matrix.record_test(receipt_path, "RD-ID-01", status="PASS", observed=matrix.TEST_CONTRACT["RD-ID-01"]["expected"],
+                                   reason="Claimed result", failure_class=None, evidence_paths=[evidence])
+            self.assertEqual(receipt_path.read_text(encoding="utf-8"), original)
+
+    def test_display_parsers_use_the_effective_override_measurements(self):
+        self.assertEqual(matrix._parse_display("Physical size: 2400x3200\nOverride size: 1080x2400\n"), (1080, 2400))
+        self.assertEqual(matrix._parse_density("Physical density: 320\nOverride density: 420\n"), 420)
 
     def test_harness_has_no_device_mutation_commands(self):
         source = (ROOT / "scripts/android_device_matrix.py").read_text(encoding="utf-8")
@@ -353,7 +542,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             contract = matrix.TEST_CONTRACT[test["id"]]
             test["expected"] = contract["expected"]
             test["installed_apk"] = installed_apk_fixture(receipt["artifact"])
-            test["evidence"][0]["kind"] = contract["evidence_kinds"][0]
+            test["evidence"][0]["kind"] = "json"
         self.assertEqual(matrix.validate_receipt(receipt), [])
 
         receipt["tests"][0]["expected"] = "arbitrary operator expectation"
@@ -363,7 +552,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             contract = matrix.TEST_CONTRACT[test["id"]]
             test["expected"] = contract["expected"]
             test["installed_apk"] = installed_apk_fixture(receipt["artifact"])
-            test["evidence"][0]["kind"] = contract["evidence_kinds"][0]
+            test["evidence"][0]["kind"] = "json"
         receipt["tests"][0]["evidence"][0]["kind"] = "arbitrary-text"
         self.assertTrue(any("evidence" in error for error in matrix.validate_receipt(receipt)))
         receipt["tests"][0]["evidence"][0]["kind"] = matrix.TEST_CONTRACT["RD-ID-01"]["evidence_kinds"][0]
@@ -658,7 +847,8 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             receipt_path = root / "receipt.json"
             receipt_path.write_text(json.dumps(receipt_fixture()), encoding="utf-8")
             evidence = root / "status.json"
-            evidence.write_text('{"phase":"running"}\n', encoding="utf-8")
+            fixture = receipt_fixture()
+            evidence.write_text(json.dumps(proof_fixture(fixture, fixture["tests"][0])), encoding="utf-8")
             updated = matrix.record_test(
                 receipt_path,
                 "RD-ID-01",
@@ -681,7 +871,7 @@ class AndroidDeviceMatrixTests(unittest.TestCase):
             original = copy.deepcopy(receipt["tests"][0]["installed_apk"])
             receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
             evidence = root / "status.json"
-            evidence.write_text("installed package metadata matched\n", encoding="utf-8")
+            evidence.write_text(json.dumps(proof_fixture(receipt, receipt["tests"][0])), encoding="utf-8")
             updated = matrix.record_test(
                 receipt_path,
                 "RD-ID-01",
