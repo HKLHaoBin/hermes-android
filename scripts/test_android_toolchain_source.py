@@ -99,6 +99,10 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn("activeTreeValid", manager)
         self.assertIn('optJSONObject("exports")', manager)
         self.assertIn('status.state != "active"', manager)
+        self.assertIn("readState", manager)
+        self.assertIn("validState", manager)
+        self.assertNotIn('readObject(File(root(context), "active.json"))', manager)
+        self.assertNotIn('readObject(File(root(context), "previous.json"))', manager)
 
     def test_relocator_stages_toolchain_script_catalog_and_manifest_paths(self):
         self.assertIn("toolchain_catalog", self.relocator)
@@ -108,7 +112,11 @@ class AndroidToolchainSourceTests(unittest.TestCase):
     def test_container_smoke_exercises_locked_dependency_closure(self):
         self.assertIn("install-closure", self.smoke)
         self.assertIn("TOOLCHAIN_INSTALL_OK", self.smoke)
+        for tool in ("ripgrep", "ffmpeg", "python", "nodejs", "npm", "uv"):
+            self.assertIn(tool, self.smoke)
         self.assertIn("installed-bash", self.smoke)
+        self.assertIn("TOOLCHAIN_ACTIVE_OK", self.smoke)
+        self.assertIn("check_tool_path", self.smoke)
         self.assertIn("env --shell", self.smoke)
 
     def test_smoke_environment_refreshes_from_installed_toolchain_state(self):

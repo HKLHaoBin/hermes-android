@@ -92,9 +92,7 @@ class TransactionLock:
     nonce: str
     pid: int
     start_time: str | None
-
-
-TRANSACTION_LOCK_GRACE_SECONDS = 1.0
+    handle: Any
 
 
 def _process_start_time(pid: int) -> str | None:
@@ -137,6 +135,47 @@ def _process_start_time(pid: int) -> str | None:
             kernel32.CloseHandle(handle)
     except (AttributeError, OSError, ValueError):
         return None
+
+
+def _try_lock_transaction_handle(handle: Any) -> bool:
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            return False
+    import fcntl
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except (BlockingIOError, OSError):
+        return False
+
+
+def _unlock_transaction_handle(handle: Any) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(0)
+        try:
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        return
+    import fcntl
+
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
 
 
 
@@ -457,11 +496,11 @@ class ToolchainStore:
         return sum(_tree_bytes(self.root / entry) for entry in entries)
 
     def _required_bytes(self, spec: PackageSpec, active: dict[str, Any], previous: dict[str, Any]) -> int:
-        # Active and rollback selections can coexist with the download, raw
-        # extraction tree, and the second normalized Termux prefix copy.
-        retained = self._selection_bytes(active, previous)
+        # free_bytes comes from shutil.disk_usage(...).free, so retained
+        # selections are already accounted for in the available-space input.
+        # Only incremental allocation during download/extraction is required.
         normalized_copy = spec.install_bytes
-        return spec.artifact.size + spec.install_bytes + normalized_copy + retained + 16 * 1024 * 1024
+        return spec.artifact.size + spec.install_bytes + normalized_copy + 16 * 1024 * 1024
 
     def _selection_status(
         self,
@@ -549,9 +588,16 @@ class ToolchainStore:
             visiting.remove(name)
 
     @staticmethod
-    def _transaction_owner(lock: Path) -> dict[str, Any] | None:
+    def _transaction_owner(lock: Path, handle: Any | None = None) -> dict[str, Any] | None:
         try:
-            value = json.loads((lock / "owner.json").read_text(encoding="utf-8"))
+            if handle is None:
+                raw = lock.read_bytes()
+            else:
+                position = handle.tell()
+                handle.seek(0)
+                raw = handle.read()
+                handle.seek(position)
+            value = json.loads(raw.decode("utf-8"))
         except (OSError, ValueError, TypeError):
             return None
         return value if isinstance(value, dict) else None
@@ -578,34 +624,26 @@ class ToolchainStore:
         # than reclaiming a live PID whose identity cannot be verified.
         return True
 
-    @staticmethod
-    def _transaction_lock_old(lock: Path) -> bool:
-        try:
-            return time.time() - lock.stat().st_mtime > TRANSACTION_LOCK_GRACE_SECONDS
-        except OSError:
-            return True
-
     def _acquire_transaction(self) -> TransactionLock:
         self.root.mkdir(parents=True, exist_ok=True)
         lock = self.root / ".transaction.lock"
-        for _ in range(4):
+        created = False
+        try:
+            descriptor = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o600)
+            created = True
+        except FileExistsError:
             try:
-                lock.mkdir()
-                break
-            except FileExistsError as exc:
-                owner = self._transaction_owner(lock)
-                if self._transaction_owner_alive(owner) or not self._transaction_lock_old(lock):
-                    raise TransactionError("another toolchain transaction is active") from exc
-                quarantine = self.root / f".transaction-stale-{uuid.uuid4().hex}"
-                try:
-                    lock.rename(quarantine)
-                except FileNotFoundError:
-                    continue
-                except OSError as rename_error:
-                    raise TransactionError("cannot recover stale toolchain transaction") from rename_error
-                shutil.rmtree(quarantine, ignore_errors=True)
-        else:
-            raise TransactionError("cannot acquire toolchain transaction lock")
+                descriptor = os.open(lock, os.O_RDWR)
+            except OSError as exc:
+                raise TransactionError("cannot open toolchain transaction lock") from exc
+        handle = os.fdopen(descriptor, "r+b")
+        if not _try_lock_transaction_handle(handle):
+            handle.close()
+            raise TransactionError("another toolchain transaction is active")
+        if not created and self._transaction_owner_alive(self._transaction_owner(lock, handle)):
+            _unlock_transaction_handle(handle)
+            handle.close()
+            raise TransactionError("another toolchain transaction is active")
         nonce = uuid.uuid4().hex
         pid = os.getpid()
         start_time = _process_start_time(pid)
@@ -616,24 +654,33 @@ class ToolchainStore:
             "created_at": time.time(),
         }
         try:
-            temporary = lock / f".owner-{nonce}.tmp"
-            temporary.write_text(json.dumps(owner, sort_keys=True), encoding="utf-8")
-            os.replace(temporary, lock / "owner.json")
+            handle.seek(0)
+            handle.truncate()
+            handle.write(json.dumps(owner, sort_keys=True).encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
         except OSError:
-            shutil.rmtree(lock, ignore_errors=True)
+            _unlock_transaction_handle(handle)
+            handle.close()
             raise
-        return TransactionLock(lock, nonce, pid, start_time)
+        return TransactionLock(lock, nonce, pid, start_time, handle)
 
     @staticmethod
     def _release_transaction(lock: TransactionLock) -> None:
-        owner = ToolchainStore._transaction_owner(lock.path)
-        if not owner or owner.get("nonce") != lock.nonce or owner.get("pid") != lock.pid:
-            return
-        expected_start = owner.get("start_time")
-        actual_start = _process_start_time(lock.pid)
-        if expected_start and actual_start is not None and expected_start != actual_start:
-            return
-        shutil.rmtree(lock.path, ignore_errors=True)
+        owner = ToolchainStore._transaction_owner(lock.path, lock.handle)
+        owned = False
+        if isinstance(owner, dict) and owner.get("nonce") == lock.nonce and owner.get("pid") == lock.pid:
+            expected_start = owner.get("start_time")
+            actual_start = _process_start_time(lock.pid)
+            owned = not (expected_start and actual_start is not None and expected_start != actual_start)
+        try:
+            if owned and os.name != "nt":
+                lock.path.unlink(missing_ok=True)
+        finally:
+            _unlock_transaction_handle(lock.handle)
+            lock.handle.close()
+            if owned and os.name == "nt":
+                lock.path.unlink(missing_ok=True)
 
     def preflight(self, name: str, host: HostFacts, *, abi: str | None = None) -> PackageSpec:
         spec = self.catalog.package(name)
@@ -1055,9 +1102,9 @@ class ToolchainStore:
                 if not previous:
                     raise TransactionError("no rollback selection is available")
                 for name, selected in previous.items():
-                    valid, reason = self._selection_status(name, selected, require_current_version=False)
+                    valid, reason = self._selection_status(name, selected, require_current_version=True)
                     if not valid:
-                        raise TransactionError(f"rollback entry is invalid for {name}: {reason}")
+                        raise TransactionError(f"rollback requires the current catalog for {name}: {reason}")
                 self._commit(previous, state["active"], "rollback")
                 return {"active": previous, "previous": state["active"]}
             finally:

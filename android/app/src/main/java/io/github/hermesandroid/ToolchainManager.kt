@@ -50,9 +50,11 @@ object ToolchainManager {
         }
         return try {
             val catalog = JSONObject(catalogFile.readText(Charsets.UTF_8))
-            val state = readObject(File(root(context), "state.json"))
-            val active = state.optJSONObject("active") ?: readObject(File(root(context), "active.json"))
-            val previous = state.optJSONObject("previous") ?: readObject(File(root(context), "previous.json"))
+            val state = readState(File(root(context), "state.json"))
+                ?: throw IOException("state.json is missing or malformed")
+            if (!validState(state)) throw IOException("state.json schema or selections are invalid")
+            val active = state.getJSONObject("active")
+            val previous = state.getJSONObject("previous")
             val packages = JSONArray()
             val records = catalog.optJSONArray("packages") ?: JSONArray()
             for (i in 0 until records.length()) {
@@ -117,8 +119,9 @@ object ToolchainManager {
 
     fun pathEntries(context: Context, field: String): List<String> {
         val catalogFile = ensureCatalog(context) ?: return emptyList()
-        val state = readObject(File(root(context), "state.json"))
-        val active = state.optJSONObject("active") ?: readObject(File(root(context), "active.json"))
+        val state = readState(File(root(context), "state.json")) ?: return emptyList()
+        if (!validState(state)) return emptyList()
+        val active = state.getJSONObject("active")
         val catalog = try {
             JSONObject(catalogFile.readText(Charsets.UTF_8))
         } catch (_: Exception) {
@@ -272,11 +275,16 @@ object ToolchainManager {
     }
 
 
-    private fun readObject(file: File): JSONObject = try {
-        if (file.isFile) JSONObject(file.readText(Charsets.UTF_8)) else JSONObject()
+    private fun readState(file: File): JSONObject? = try {
+        if (file.isFile) JSONObject(file.readText(Charsets.UTF_8)) else null
     } catch (_: Exception) {
-        JSONObject()
+        null
     }
+
+    private fun validState(state: JSONObject): Boolean =
+        state.optInt("schema_version", 0) == SCHEMA_VERSION &&
+            state.optJSONObject("active") != null &&
+            state.optJSONObject("previous") != null
 
     private fun joinJson(values: JSONArray): String = buildList {
         for (i in 0 until values.length()) add(values.optString(i))

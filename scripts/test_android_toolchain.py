@@ -208,6 +208,23 @@ class AndroidToolchainTests(unittest.TestCase):
             spec.artifact.size + (2 * spec.install_bytes) + (16 * 1024 * 1024),
         )
 
+    def test_required_bytes_does_not_recount_retained_active_or_previous_entries(self):
+        _lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        spec = catalog.package("tool")
+        baseline = store._required_bytes(spec, {}, {})
+        retained = store._required_bytes(
+            spec,
+            {"libfoo": {"entry": "entries/libfoo/1.0.0"}},
+            {"tool": {"entry": "entries/tool/1.0.0"}},
+        )
+        self.assertEqual(retained, baseline)
+
     def test_preflight_rejects_catalog_conflict_before_write(self):
         lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
         _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
@@ -249,9 +266,24 @@ class AndroidToolchainTests(unittest.TestCase):
         store.install("tool", tool_v2, self.host())
         self.assertEqual(store.inventory(self.host())["active"]["tool"]["version"], "2.0.0")
         self.assertTrue((self.root / "tools" / "entries" / "tool" / "1.0.0").is_dir())
-        store.rollback()
-        self.assertEqual(store.inventory(self.host())["active"]["tool"]["version"], "1.0.0")
+        with self.assertRaisesRegex(TransactionError, "current catalog"):
+            store.rollback()
+        self.assertEqual(store.inventory(self.host())["active"]["tool"]["version"], "2.0.0")
         self.assertEqual(self.user_state.read_text(encoding="utf-8"), '{"keep": true}\n')
+
+    def test_rollback_restores_verified_selection_within_current_catalog(self):
+        lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
+        _tool, tool_hash, tool_size = self.archive("tool", "1.0.0")
+        catalog = self.catalog({
+            "libfoo": (lib_hash, lib_size),
+            "tool": (tool_hash, tool_size),
+        })
+        store = ToolchainStore(self.root / "tools", catalog)
+        store.install("libfoo", lib, self.host())
+        store.remove("libfoo")
+        restored = store.rollback()
+        self.assertEqual(restored["active"]["libfoo"]["version"], "1.0.0")
+        self.assertEqual(store.inventory(self.host())["active"]["libfoo"]["version"], "1.0.0")
 
     def test_remove_cascades_unused_dependencies_but_keeps_shared_dependency(self):
         lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
@@ -389,7 +421,7 @@ class AndroidToolchainTests(unittest.TestCase):
 
         def observed_preflight(*args, **kwargs):
             events.append("preflight")
-            self.assertTrue((store.root / ".transaction.lock").is_dir())
+            self.assertTrue((store.root / ".transaction.lock").is_file())
             return preflight(*args, **kwargs)
 
         with patch.object(store, "_acquire_transaction", side_effect=observed_acquire), patch.object(
@@ -407,8 +439,8 @@ class AndroidToolchainTests(unittest.TestCase):
         })
         store = ToolchainStore(self.root / "tools", catalog)
         held = store._acquire_transaction()
-        owner_path = held.path / "owner.json"
-        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        held.handle.seek(0)
+        owner = json.loads(held.handle.read().decode("utf-8"))
         self.assertEqual(owner["nonce"], held.nonce)
         self.assertEqual(owner["pid"], os.getpid())
         self.assertTrue(owner["start_time"])
@@ -418,17 +450,19 @@ class AndroidToolchainTests(unittest.TestCase):
         self.assertFalse(held.path.exists())
 
         stale = self.root / "tools" / ".transaction.lock"
-        stale.mkdir(parents=True)
-        (stale / "owner.json").write_text(json.dumps({
+        stale.write_text(json.dumps({
             "pid": os.getpid(),
             "nonce": "reused-pid",
             "start_time": "not-this-process-start",
             "created_at": time.time() - 30,
         }), encoding="utf-8")
-        old = time.time() - 30
-        os.utime(stale, (old, old))
         recovered = store._acquire_transaction()
         self.assertNotEqual(recovered.nonce, "reused-pid")
+        store._release_transaction(recovered)
+
+        stale.write_bytes(b"")
+        recovered = store._acquire_transaction()
+        self.assertTrue(recovered.path.is_file())
         store._release_transaction(recovered)
 
     def test_transaction_release_does_not_remove_replaced_owner(self):
@@ -440,13 +474,16 @@ class AndroidToolchainTests(unittest.TestCase):
         })
         store = ToolchainStore(self.root / "tools", catalog)
         held = store._acquire_transaction()
-        owner_path = held.path / "owner.json"
-        owner = json.loads(owner_path.read_text(encoding="utf-8"))
+        held.handle.seek(0)
+        owner = json.loads(held.handle.read().decode("utf-8"))
         owner["nonce"] = "replacement-owner"
-        owner_path.write_text(json.dumps(owner), encoding="utf-8")
+        held.handle.seek(0)
+        held.handle.truncate()
+        held.handle.write(json.dumps(owner).encode("utf-8"))
+        held.handle.flush()
         store._release_transaction(held)
-        self.assertTrue(held.path.is_dir())
-        shutil.rmtree(held.path)
+        self.assertTrue(held.path.is_file())
+        held.path.unlink()
 
     def test_environment_exports_only_authoritatively_active_entries(self):
         lib, lib_hash, lib_size = self.archive("libfoo", "1.0.0")
@@ -546,8 +583,9 @@ class AndroidToolchainTests(unittest.TestCase):
         updated_store = ToolchainStore(self.root / "tools", Catalog.from_dict(updated_doc))
         updated_store.update("ripgrep", update, self.host())
         self.assertEqual(updated_store.inventory(self.host())["active"]["ripgrep"]["version"], "2.0.0")
-        updated_store.rollback()
-        self.assertEqual(updated_store.inventory(self.host())["active"]["ripgrep"]["version"], "1.0.0")
+        with self.assertRaisesRegex(TransactionError, "current catalog"):
+            updated_store.rollback()
+        self.assertEqual(updated_store.inventory(self.host())["active"]["ripgrep"]["version"], "2.0.0")
         updated_store.remove("uv")
         self.assertNotIn("uv", updated_store.inventory(self.host())["active"])
 

@@ -7,6 +7,9 @@
 S=/data/data/com.termux/files/home/sim
 R=$S/files/hermes-agent
 RC=0
+TOOLCHAIN_ROOTS="bash git curl wget tar unzip coreutils findutils ripgrep ffmpeg python nodejs npm uv"
+HERMES_ANDROID_TOOLCHAIN_ROOT=$S/files/tools
+export HERMES_ANDROID_TOOLCHAIN_ROOT
 first() { read -r line; echo "$1 -> $line"; while read -r _; do :; done; }
 dump() { while IFS= read -r line; do echo "$line"; done < "$1"; }
 PORT=9119
@@ -21,8 +24,12 @@ for mode in ld-path runpath-only; do
     if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
         --catalog "$R/webui/toolchain/catalog.json" \
         --root "$HERMES_ANDROID_TOOLCHAIN_ROOT" install-closure \
-        bash git curl wget tar unzip coreutils findutils > "$S/toolchain-install.json"; then
-      grep -q '"bash"' "$S/toolchain-install.json" && echo TOOLCHAIN_INSTALL_OK || RC=1
+        $TOOLCHAIN_ROOTS > "$S/toolchain-install.json"; then
+      if "$S/files/run.sh" --py -c 'import json,sys; d=json.load(open(sys.argv[1])); wanted="bash git curl wget tar unzip coreutils findutils ripgrep ffmpeg python nodejs npm uv".split(); rows={row["name"]:row for row in d.get("packages",[])}; bad=[name for name in wanted if name not in d.get("active",{}) or rows.get(name,{}).get("state") != "active"]; assert not bad, bad; print("TOOLCHAIN_ACTIVE_OK")' "$S/toolchain-install.json"; then
+        echo TOOLCHAIN_INSTALL_OK
+      else
+        RC=1
+      fi
     else
       echo "== toolchain install log"
       dump "$S/toolchain-install.json"
@@ -45,6 +52,26 @@ for mode in ld-path runpath-only; do
   check_exec npm npm --version
   check_exec rg rg --version
   check_exec ffmpeg ffmpeg -version
+  check_exec uv uv --version
+  check_tool_path() {
+    label="$1"
+    command_name="$2"
+    output=$("$S/files/run.sh" --exec sh -c "command -v $command_name" 2>&1)
+    status=$?
+    printf '%s\n' "$output" | first "$label"
+    case "$output" in
+      "$HERMES_ANDROID_TOOLCHAIN_ROOT"/entries/*) ;;
+      *) echo "$label -> fallback path: $output"; RC=1 ;;
+    esac
+    if [ "$status" -ne 0 ]; then RC=1; fi
+  }
+  check_tool_path path-bash bash
+  check_tool_path path-python python
+  check_tool_path path-node node
+  check_tool_path path-npm npm
+  check_tool_path path-rg rg
+  check_tool_path path-ffmpeg ffmpeg
+  check_tool_path path-uv uv
   if "$S/files/run.sh" --py "$R/webui/android_toolchain.py" \
       --catalog "$R/webui/toolchain/catalog.json" \
       --root "$HERMES_ANDROID_TOOLCHAIN_ROOT" env --shell > "$S/toolchain-env-$mode.sh"; then
