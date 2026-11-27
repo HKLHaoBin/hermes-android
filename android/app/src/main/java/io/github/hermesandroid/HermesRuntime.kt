@@ -82,8 +82,36 @@ object HermesRuntime {
             put("payloadId", s.payloadId)
             put("exitCode", s.exitCode ?: JSONObject.NULL)
             put("appVersion", BuildConfig.VERSION_NAME)
+            put("androidApi", android.os.Build.VERSION.SDK_INT)
+            put("abi", android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")
+            put("capabilities", capabilitiesJson())
             if (includeToken) put("token", s.token)
         }
+    }
+
+    /** Conservative Android capability declaration; do not imply desktop parity. */
+    private fun capabilitiesJson(): JSONArray = JSONArray().apply {
+        capability(this, "webui", "supported", "本地 WebView 与 Hermes WebUI")
+        capability(this, "runtime", "supported", "固定版本的 Android ARM64 runtime")
+        capability(this, "cli_tui", "partial", "当前 Android 启动路径主要提供 WebUI")
+        capability(this, "terminal", "partial", "Android /system/bin/sh 与 Toybox，不是完整 Linux shell")
+        capability(this, "skills", "partial", "运行时可携带技能，但没有完整 Android 管理界面")
+        capability(this, "plugins", "unavailable", "尚无 Android 插件安装与生命周期管理")
+        capability(this, "mcp", "unavailable", "尚无 Android MCP 安装与依赖检查流程")
+        capability(this, "browser", "unavailable", "未捆绑 Chromium/Electron 浏览器后端")
+        capability(this, "computer_use", "unavailable", "未提供 Android computer-use 后端")
+        capability(this, "background_service", "partial", "前台服务可管理 runtime，但仍受 Android/OEM 后台策略影响")
+        capability(this, "job_queue", "unavailable", "尚无持久化任务队列和进程重建恢复")
+        capability(this, "backup_restore", "unavailable", "尚无版本化选择性导出与恢复格式")
+        capability(this, "real_device_validation", "unavailable", "容器 smoke test 不等于 Android 真机验收")
+    }
+
+    private fun capability(out: JSONArray, id: String, state: String, reason: String) {
+        out.put(JSONObject().apply {
+            put("id", id)
+            put("state", state)
+            put("reason", reason)
+        })
     }
 
     fun logJson(max: Int): JSONObject = JSONObject().put("lines", JSONArray(recentLog(max)))
