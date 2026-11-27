@@ -1,0 +1,97 @@
+{
+  "matrix_kind": "android-device-acceptance-matrix",
+  "schema_version": 1,
+  "status_semantics": {
+    "PASS": "The step ran on the authorized device, the expected state was observed, and evidence is present and hashable.",
+    "FAIL": "The step ran but the observed state did not meet the expectation. A failure class, reason, and evidence are required.",
+    "BLOCKED": "The step could not run because an authorized prerequisite was absent or an identity/evidence check failed. BLOCKED is never a release pass.",
+    "NOT RUN": "The step is planned but has not been attempted. NOT RUN is never a release pass."
+  },
+  "slots": [
+    {
+      "slot_id": "A13-Google",
+      "api_level": 33,
+      "oem": "Google",
+      "abi": "arm64-v8a",
+      "required": true,
+      "tier": "M0"
+    },
+    {
+      "slot_id": "A14-Samsung",
+      "api_level": 34,
+      "oem": "Samsung",
+      "abi": "arm64-v8a",
+      "required": true,
+      "tier": "M0"
+    },
+    {
+      "slot_id": "A15-Xiaomi",
+      "api_level": 35,
+      "oem": "Xiaomi",
+      "abi": "arm64-v8a",
+      "required": true,
+      "tier": "M0"
+    },
+    {
+      "slot_id": "A16-Google",
+      "api_level": 36,
+      "oem": "Google",
+      "abi": "arm64-v8a",
+      "required": true,
+      "tier": "M0"
+    },
+    {
+      "slot_id": "Large-screen",
+      "api_level": 0,
+      "oem": "any",
+      "abi": "arm64-v8a",
+      "required": true,
+      "tier": "M1"
+    },
+    {
+      "slot_id": "OEM-stress",
+      "api_level": 0,
+      "oem": "any",
+      "abi": "arm64-v8a",
+      "required": false,
+      "tier": "M1"
+    }
+  ],
+  "test_ids": [
+    "RD-ID-01",
+    "RD-INSTALL-01",
+    "RD-INSTALL-02",
+    "RD-COLD-01",
+    "RD-UPGRADE-01",
+    "RD-MIGRATION-01",
+    "RD-ROLLBACK-01",
+    "RD-RUNTIME-01",
+    "RD-RUNTIME-02",
+    "RD-RUNTIME-03",
+    "RD-RUNTIME-04",
+    "RD-RUNTIME-05",
+    "RD-JOB-01",
+    "RD-JOB-02",
+    "RD-WEB-01",
+    "RD-WEB-02",
+    "RD-STREAM-01",
+    "RD-STREAM-02",
+    "RD-TERM-01",
+    "RD-SAF-01",
+    "RD-SAF-02",
+    "RD-SAF-03",
+    "RD-SAF-04",
+    "RD-SAF-05",
+    "RD-BG-01",
+    "RD-BG-02",
+    "RD-BG-03",
+    "RD-BG-04",
+    "RD-MEMORY-01",
+    "RD-PROCESS-01",
+    "RD-LARGE-01",
+    "RD-UX-01",
+    "RD-UX-02",
+    "RD-UX-03",
+    "RD-UX-04"
+  ]
+}

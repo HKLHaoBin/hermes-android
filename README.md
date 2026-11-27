@@ -49,6 +49,14 @@
 
 Android 容器不等于 WebView 或红米 K70 / HyperOS 真机验收。Release 说明会区分已执行验证与需要原设备复测的内容。
 
+### 真机验收与发布门禁（Issue #14）
+
+- 真机矩阵、测试 ID、receipt schema 和发布 gate 见 [`docs/android-device-acceptance.md`](docs/android-device-acceptance.md)。矩阵槽位只描述 API/OEM/ABI，不伪造设备或结果。
+- `scripts/android_device_matrix.py` 只从实际授权 ADB 设备读取身份；没有在线设备时 capture 明确返回 `BLOCKED`，不写入 receipt。
+- receipt 必须绑定精确设备/API/OEM/WebView、APK/runtime/WebUI/Actions identity、证据 SHA-256 和脱敏状态。`PASS`、`FAIL`、`BLOCKED`、`NOT RUN` 的语义不可互换。
+- Build APK 的 `apk` Actions artifact 额外包含 `artifact-manifest.json`、runtime/install/WebUI provenance sidecars；Publish verified APK 会下载 `apk` 与 `payload` 两个 artifact，重新核对 APK、payload、runtime、WebUI 的全部 identity 字段后才保留该 manifest。
+- Build APK CI 只做 matrix/schema/static validation、既有签名/payload/container smoke；不连接手机、不修改 package verifier、不把 container 结果当作真机结果。
+
 构建成功后，手动运行 **Publish verified APK**，提供成功的 `main` 构建编号与新版本标签。发布工作流重新验证来源、APK SHA-256 与证书，只发布验证过的工件。
 
 ## 源码结构
