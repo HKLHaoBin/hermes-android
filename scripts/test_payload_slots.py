@@ -158,6 +158,35 @@ class PayloadSlotTests(unittest.TestCase):
             self.assertIsNone(store.snapshot()["active"])
             self.assertFalse(store.snapshot()["pending"])
 
+    def test_user_cancellation_rolls_back_without_quarantining_candidate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SlotStateStore(Path(tmp))
+            store.activate("old")
+            store.mark_healthy()
+            store.activate("candidate")
+            self.assertEqual(store.rollback(reject_failed=False), "old")
+            self.assertIsNone(store.snapshot()["rejected"])
+            store.activate("candidate")
+
+    def test_reusing_previous_good_preserves_it_when_activation_is_cancelled(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store = SlotStateStore(Path(tmp))
+            store.create_slot("active")
+            store.create_slot("retained")
+            store._write({
+                "format": 1,
+                "generation": 4,
+                "active": "active",
+                "previous_good": "retained",
+                "pending": False,
+                "rejected": None,
+                "reused_previous_good": False,
+            })
+            store.activate("retained", reuse_previous_good=True)
+            self.assertEqual(store.rollback(reject_failed=False), "active")
+            self.assertEqual(store.snapshot()["previous_good"], "retained")
+            self.assertEqual(store.slot_ids(), {"active", "retained"})
+
 
 if __name__ == "__main__":
     unittest.main()

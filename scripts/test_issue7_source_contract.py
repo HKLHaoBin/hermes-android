@@ -39,7 +39,8 @@ class Issue7SourceContractTests(unittest.TestCase):
             "renameTo", "zip_sha256", "rejectedPayloadId", "rejected", "pruneSlots", "pruneStaleSlots", "beforeDiscard(slotDir(it).absolutePath)",
         ):
             self.assertIn(needle, source)
-        self.assertIn("failed?.takeIf { it != restored }?.let { FileTools.deleteTree(slotDir(it)) }", source)
+        self.assertIn("failed?.takeIf { it != restored && it != retained }?.let { FileTools.deleteTree(slotDir(it)) }", source)
+        self.assertIn('"reused_previous_good"', source)
         self.assertIn("rejected = failed", source)
 
     def test_runtime_status_exposes_pair_identity_and_compatibility(self):

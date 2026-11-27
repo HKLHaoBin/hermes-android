@@ -23,6 +23,7 @@ class SlotStateStore:
                 "previous_good": None,
                 "pending": False,
                 "rejected": None,
+                "reused_previous_good": False,
             }
         data = json.loads(self.path.read_text(encoding="utf-8"))
         return data
@@ -32,7 +33,7 @@ class SlotStateStore:
         temp.write_text(json.dumps(data, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
         temp.replace(self.path)
 
-    def activate(self, slot_id: str) -> dict[str, Any]:
+    def activate(self, slot_id: str, reuse_previous_good: bool = False) -> dict[str, Any]:
         if not slot_id or "/" in slot_id or "\\" in slot_id or slot_id in {".", ".."}:
             raise ValueError("unsafe slot id")
         current = self.snapshot()
@@ -50,6 +51,7 @@ class SlotStateStore:
             "previous_good": current.get("active"),
             "pending": True,
             "rejected": None,
+            "reused_previous_good": reuse_previous_good,
         }
         self._write(next_state)
         return next_state
@@ -59,11 +61,13 @@ class SlotStateStore:
         if current.get("pending"):
             current["pending"] = False
             current["rejected"] = None
+            current["reused_previous_good"] = False
             self._write(current)
         self.prune_slots()
         return current
 
-    def rollback(self, before_discard: Callable[[Path], None] | None = None) -> str | None:
+    def rollback(self, before_discard: Callable[[Path], None] | None = None,
+                 reject_failed: bool = True) -> str | None:
         current = self.snapshot()
         if not current.get("pending"):
             return current.get("active")
@@ -71,19 +75,22 @@ class SlotStateStore:
         previous = current.get("previous_good")
         if previous == failed or not (self.root / "slots" / str(previous)).is_dir():
             previous = None
+        retained = failed if current.get("reused_previous_good") and failed and \
+            failed != previous and (self.root / "slots" / failed).is_dir() else None
         if failed:
             failed_path = self.root / "slots" / failed
             if before_discard:
                 before_discard(failed_path)
         current["active"] = previous
-        current["previous_good"] = None
+        current["previous_good"] = retained
         current["pending"] = False
-        current["rejected"] = failed
+        current["rejected"] = failed if reject_failed else None
+        current["reused_previous_good"] = False
         current["generation"] = int(current.get("generation", 0)) + 1
         self._write(current)
         if failed:
             path = self.root / "slots" / failed
-            if path.exists():
+            if path.exists() and failed != retained:
                 shutil.rmtree(path)
         self.prune_slots()
         return previous

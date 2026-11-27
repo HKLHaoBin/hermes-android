@@ -54,6 +54,7 @@ jobs:
             scripts.test_issue7_static \
             scripts.test_issue7_standalone_contract \
             scripts.test_issue7_review_regressions \
+            scripts.test_issue7_smoke_contract \
             scripts.test_issue7_parent_gate
 
       - name: Fail-closed parent Issue #1 integration contracts
@@ -301,10 +302,21 @@ jobs:
 
       - name: Install the payload the way the app does
         run: |
+          PAYLOAD_ID=$(python3 -c 'import json; print(json.load(open("build/payload/payload.json"))["payload_id"])')
           python3 scripts/install_payload.py --zip build/payload/payload.zip --manifest build/payload/payload.json \
-            --dest sim/files/hermes-agent --final-root "$FINAL/files/hermes-agent"
+            --dest "sim/files/hermes-agent-slots/$PAYLOAD_ID" \
+            --final-root "$FINAL/files/hermes-agent-slots/$PAYLOAD_ID" \
+            --slot-root sim/files/hermes-agent-slots --state sim/files/hermes-agent.active.json
+          REJECTED_ID="smoke-rejected-$PAYLOAD_ID"
+          python3 -c 'import json,sys; p=json.load(open("build/payload/payload.json")); p["payload_id"]=sys.argv[1]; json.dump(p, open("build/payload/payload-smoke-rejected.json", "w"), sort_keys=True)' "$REJECTED_ID"
+          python3 scripts/install_payload.py --zip build/payload/payload.zip --manifest build/payload/payload-smoke-rejected.json \
+            --dest "sim/files/hermes-agent-slots/$REJECTED_ID" \
+            --final-root "$FINAL/files/hermes-agent-slots/$REJECTED_ID" \
+            --slot-root sim/files/hermes-agent-slots --state sim/files/hermes-agent.active.json \
+            --simulate-health-failure
+          python3 -c 'import json,sys; s=json.load(open("sim/files/hermes-agent.active.json")); assert s["active"]==sys.argv[1] and s["rejected"]==sys.argv[2] and not s["pending"]' "$PAYLOAD_ID" "$REJECTED_ID"
           python3 scripts/smoke_env.py --manifest build/payload/payload.json \
-            --root "$FINAL/files/hermes-agent" --files "$FINAL/files" --out sim/files/run.sh
+            --root "$FINAL/files/hermes-agent-slots/$PAYLOAD_ID" --files "$FINAL/files" --out sim/files/run.sh
           cp scripts/smoke_webui.py scripts/smoke_runtime_fixes.py scripts/smoke.sh sim/
           chmod -R a+rwX sim
           cat sim/files/run.sh

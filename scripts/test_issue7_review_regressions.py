@@ -65,9 +65,78 @@ class ReviewedSourceTests(unittest.TestCase):
         self.assertLess(service.index("installer.markHealthy()"), service.index("phase = HermesRuntime.Phase.RUNNING"))
         self.assertIn('restoredManifest ?: org.json.JSONObject()', service)
 
+    def test_legacy_migration_materializes_a_relocatable_fallback(self):
+        migration = method(self.installer, "migrateLegacy")
+        self.assertIn("legacyMarker", migration)
+        finish = method(self.installer, "finishLegacyMigration")
+        self.assertIn("legacyRoot.renameTo(destination)", finish)
+        self.assertIn('MANIFEST_FILE', finish)
+        self.assertIn('writeState(id, null, pending = false', finish)
+        self.assertIn("if (!destination.isDirectory && !legacyRoot.renameTo(destination))", finish)
+        self.assertLess(finish.index("writeState(id, null, pending = false"), finish.rindex("legacyMarker.delete()"))
+        rewrite = method(self.installer, "rewriteLegacyPaths")
+        self.assertIn("legacyPath", rewrite)
+        self.assertIn("destination.absolutePath", rewrite)
+        self.assertIn("Os.readlink", rewrite)
+        self.assertIn("val expected = resolve(pair.getString(1))", rewrite)
+        self.assertIn("rootPh.isNotEmpty()", rewrite)
+        self.assertIn("Os.symlink(expected, link.absolutePath)", rewrite)
+        service = method(self.service, "runRuntime")
+        self.assertLess(service.index("quiescePayload(installer.root.absolutePath)"),
+                        service.index("installer.migrateLegacy(includedManifest)"))
+        self.assertLess(service.index("installer.migrateLegacy(includedManifest)"),
+                        service.index("installer.selectedManifest(includedManifest)"))
+
+    def test_install_cancellation_cannot_commit_a_candidate_after_stop(self):
+        install = method(self.installer, "install")
+        self.assertIn("cancelled: () -> Boolean", install)
+        self.assertIn("checkCancelled(cancelled)", install)
+        self.assertIn("if (cancelled())", install)
+        self.assertIn("FileTools.deleteTree(candidate)", install)
+        self.assertIn("class InstallCancelledException", self.installer)
+        service = method(self.service, "runRuntime")
+        self.assertIn("t is PayloadInstaller.InstallCancelledException", service)
+        self.assertIn("installer.rollback(::quiescePayload)", service)
+        self.assertIn("rejectFailed = false", service)
+        install_end = service.index("installer.install(manifest")
+        cancel_guard = service.index("if (stopping)", install_end)
+        self.assertLess(install_end, cancel_guard)
+        self.assertLess(service.index("installer.activationPending()", cancel_guard),
+                        service.index("installer.rollback(::quiescePayload)", cancel_guard))
+        stop = method(self.service, "stopRuntime")
+        self.assertIn("worker?.join()", stop)
+        self.assertNotIn("worker?.join(5000)", stop)
+
+    def test_reuse_rollback_keeps_the_original_previous_good_slot(self):
+        rollback = method(self.installer, "rollback")
+        self.assertIn('state.optBoolean("reused_previous_good", false)', rollback)
+        self.assertIn("val retained", rollback)
+        self.assertIn("it != retained", rollback)
+        activate = method(self.installer, "activateExisting")
+        self.assertIn("reusedPreviousGood", activate)
+        self.assertIn('"reused_previous_good"', self.installer)
+
+    def test_state_backup_uses_the_first_valid_copy(self):
+        read = method(self.installer, "readState")
+        parse = method(self.installer, "parseState")
+        write = method(self.installer, "writeState")
+        self.assertIn("return parseState(file)", read)
+        self.assertIn("reused_previous_good", parse)
+        self.assertIn("prior = parseState(file)", write)
+        self.assertNotIn("stateFile.copyTo(stateBackup", write)
+
+    def test_reuse_of_retained_previous_good_skips_extraction_space_reservation(self):
+        reuse = method(self.installer, "canReuseSlot")
+        self.assertIn('previousGoodSlotId() == id', reuse)
+        service = method(self.service, "runRuntime")
+        self.assertLess(service.index("val canReuse = installer.canReuseSlot(manifest)"),
+                        service.index("if (needsInstall && !canReuse)"))
+        self.assertLess(service.index("if (needsInstall && !canReuse)"),
+                        service.index("filesDir.usableSpace"))
+
     def test_gc_runs_before_space_check_and_after_every_health_check(self):
         service = method(self.service, "runRuntime")
-        self.assertLess(service.index("installer.pruneStaleSlots()"), service.index("if (installer.needsInstall(manifest))"))
+        self.assertLess(service.index("installer.pruneStaleSlots()"), service.index("if (needsInstall"))
         healthy = method(self.installer, "markHealthy")
         self.assertRegex(healthy, r"\n        }\n        pruneSlots\(\)")
         prune = method(self.installer, "pruneSlots")

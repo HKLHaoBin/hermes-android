@@ -88,12 +88,14 @@ class HermesService : Service() {
         var pump: Thread? = null
         try {
             attemptedRoot = installer.root.absolutePath
-            val recovery = installer.recoverPending(::quiescePayload)
-            attemptedRoot = installer.root.absolutePath
             if (!installer.hasPayload()) {
                 throw IOException("这个安装包没有内置 Hermes 运行时（构建时缺少 payload）")
             }
             val includedManifest = installer.manifest()
+            if (installer.activeSlotId() == null) quiescePayload(installer.root.absolutePath)
+            installer.migrateLegacy(includedManifest)
+            val recovery = installer.recoverPending(::quiescePayload)
+            attemptedRoot = installer.root.absolutePath
             val manifest = installer.selectedManifest(includedManifest)
             val usingFallback = manifest.getString("payload_id") != includedManifest.getString("payload_id")
             val updateError = if (usingFallback) "payload-startup-rollback" else ""
@@ -109,7 +111,9 @@ class HermesService : Service() {
             quiescePayload(installer.root.absolutePath)
             installer.pruneStaleSlots()
 
-            if (installer.needsInstall(manifest)) {
+            val needsInstall = installer.needsInstall(manifest)
+            val canReuse = installer.canReuseSlot(manifest)
+            if (needsInstall && !canReuse) {
                 val payloadBytes = manifest.optLong("total_bytes", 0L).coerceAtLeast(0L)
                 val need = payloadBytes * 2L + 200L * 1024 * 1024
                 val free = filesDir.usableSpace
@@ -117,15 +121,24 @@ class HermesService : Service() {
                     fail("存储空间不足：需要约 ${need / 1_000_000} MB，当前可用 ${free / 1_000_000} MB")
                     return
                 }
+            }
+            if (needsInstall) {
                 HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.INSTALLING, progress = 0f, message = "首次运行，正在解压运行环境…") }
-                installer.install(manifest) { p, label ->
+                installer.install(manifest, { p, label ->
                     HermesRuntime.update { it.copy(progress = p, message = label) }
-                }
+                }) { stopping }
                 attemptedRoot = installer.root.absolutePath
                 applyManifestIdentity(installer, manifest, updateError)
                 log("运行环境已安装：$payloadId")
             }
-            if (stopping) return
+            if (stopping) {
+                if (installer.activationPending()) {
+                    val restored = installer.rollback(::quiescePayload, rejectFailed = false)
+                    applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-install-cancelled")
+                    if (restored != null) log("停止期间取消运行环境激活，恢复 previous-good：$restored")
+                }
+                return
+            }
 
             try {
                 RuntimeEnv.installConsoleThemes(this)
@@ -203,7 +216,18 @@ class HermesService : Service() {
             try {
                 stopOwnedProcess(attemptedRoot)
                 pump?.join(2000)
-                if (stopping) return
+                val cancelled = stopping || t is PayloadInstaller.InstallCancelledException
+                if (cancelled) {
+                    if (installer.activationPending()) {
+                        val restored = installer.rollback(::quiescePayload, rejectFailed = false)
+                        val restoredManifest = installer.installedManifest()
+                        applyManifestIdentity(installer, restoredManifest ?: org.json.JSONObject(), "payload-install-cancelled")
+                        if (restored != null) log("运行环境安装已取消，恢复 previous-good：$restored")
+                    } else {
+                        applyManifestIdentity(installer, installer.installedManifest() ?: org.json.JSONObject(), "payload-install-cancelled")
+                    }
+                    return
+                }
                 if (installer.activationPending()) {
                     val restored = installer.rollback(::quiescePayload)
                     val restoredManifest = installer.installedManifest()
@@ -353,7 +377,7 @@ class HermesService : Service() {
             } catch (_: InterruptedException) {
             }
         }
-        worker?.join(5000)
+        worker?.join()
         process = null
         pid = 0
         HermesRuntime.update { it.copy(phase = HermesRuntime.Phase.STOPPED, message = "已停止", pid = 0) }
