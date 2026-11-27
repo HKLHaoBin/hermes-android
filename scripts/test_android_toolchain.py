@@ -67,6 +67,8 @@ class AndroidToolchainTests(unittest.TestCase):
                 "architecture": "aarch64",
                 "min_sdk": 24,
                 "dependencies": [],
+                "source": {"package": "libfoo", "homepage": "https://packages.invalid/libfoo"},
+                "license": "MIT",
                 "entrypoints": [],
                 "exports": {"path": ["lib"], "ld_library_path": ["lib"]},
                 "install_bytes": 80,
@@ -83,6 +85,8 @@ class AndroidToolchainTests(unittest.TestCase):
                 "architecture": "aarch64",
                 "min_sdk": 24,
                 "dependencies": ["libfoo"],
+                "source": {"package": "tool", "homepage": "https://packages.invalid/tool"},
+                "license": "MIT",
                 "entrypoints": ["bin/tool"],
                 "exports": {"path": ["bin"], "ld_library_path": []},
                 "install_bytes": 120,
@@ -114,6 +118,12 @@ class AndroidToolchainTests(unittest.TestCase):
                 "packages_index_sha256": "b" * 64,
                 "packages_index_size": 1,
                 "key_fingerprint": "c" * 40,
+                "keyring_artifact": {
+                    "url": "https://packages.invalid/keyring.deb",
+                    "filename": "keyring.deb",
+                    "sha256": "d" * 64,
+                    "size": 1,
+                },
                 "signature": {
                     "type": "openpgp-inrelease",
                     "status": "verified",
@@ -153,6 +163,16 @@ class AndroidToolchainTests(unittest.TestCase):
         doc = catalog.to_dict()
         doc["packages"][0]["artifact"]["url"] = "https://packages.invalid.evil/libfoo_1.0.0.zip"
         with self.assertRaisesRegex(CatalogError, "outside"):
+            Catalog.from_dict(doc)
+
+        doc = catalog.to_dict()
+        doc["packages"][0].pop("source")
+        with self.assertRaisesRegex(CatalogError, "source"):
+            Catalog.from_dict(doc)
+
+        doc = catalog.to_dict()
+        doc["repository"].pop("keyring_artifact")
+        with self.assertRaisesRegex(CatalogError, "keyring"):
             Catalog.from_dict(doc)
 
     def test_preflight_rejects_abi_dependency_and_space_before_write(self):

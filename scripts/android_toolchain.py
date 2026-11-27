@@ -201,6 +201,26 @@ class Catalog:
             or ".." in PurePosixPath(base_parts.path).parts
         ):
             raise CatalogError("invalid repository base URL")
+        keyring = repository.get("keyring_artifact")
+        if not isinstance(keyring, dict):
+            raise CatalogError("missing repository keyring artifact")
+        keyring_filename = _require_safe_rel(keyring.get("filename", ""), "keyring filename")
+        keyring_hash = keyring.get("sha256")
+        keyring_size = keyring.get("size")
+        keyring_url = keyring.get("url")
+        keyring_parts = urlsplit(keyring_url) if isinstance(keyring_url, str) else None
+        if (
+            keyring_parts is None
+            or keyring_parts.scheme != "https"
+            or keyring_parts.netloc != base_parts.netloc
+            or not keyring_parts.path.startswith(base_parts.path)
+            or keyring_parts.path.rsplit("/", 1)[-1] != keyring_filename
+            or not isinstance(keyring_hash, str)
+            or not _HEX64.fullmatch(keyring_hash)
+            or type(keyring_size) is not int
+            or keyring_size <= 0
+        ):
+            raise CatalogError("invalid repository keyring artifact")
 
         raw_packages = data.get("packages")
         if not isinstance(raw_packages, list) or not raw_packages:
@@ -230,6 +250,17 @@ class Catalog:
                 not isinstance(item, str) or not _NAME.fullmatch(item) for item in conflicts
             ):
                 raise CatalogError(f"invalid conflicts for {name}")
+            source = raw.get("source")
+            if (
+                not isinstance(source, dict)
+                or not isinstance(source.get("package"), str)
+                or not source["package"]
+                or not isinstance(source.get("homepage", ""), str)
+            ):
+                raise CatalogError(f"invalid source provenance for {name}")
+            license_name = raw.get("license")
+            if not isinstance(license_name, str) or not license_name:
+                raise CatalogError(f"invalid license provenance for {name}")
             entrypoints = raw.get("entrypoints", [])
             if not isinstance(entrypoints, list):
                 raise CatalogError(f"invalid entrypoints for {name}")

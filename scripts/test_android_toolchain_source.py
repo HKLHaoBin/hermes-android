@@ -1,5 +1,6 @@
 """Source-bound Android integration contracts for Issue #5."""
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,9 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         cls.catalog = json.loads(
             (ROOT / "android/app/src/main/assets/toolchain/catalog.json").read_text(encoding="utf-8")
         )
+        cls.lock = json.loads(
+            (ROOT / "toolchain/termux-catalog.lock.json").read_text(encoding="utf-8")
+        )
 
     def test_catalog_is_locked_for_termux_arm64_and_verified(self):
         self.assertEqual(self.catalog["schema_version"], 1)
@@ -25,8 +29,21 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertEqual(self.catalog["target"]["triple"], "linux-arm64-bionic")
         self.assertEqual(self.catalog["repository"]["signature"]["status"], "verified")
         self.assertEqual(self.catalog["repository"]["signature"]["verified_by"], "gpgv")
+        self.assertIn("keyring_artifact", self.catalog["repository"])
+        self.assertTrue(all(item.get("source", {}).get("package") for item in self.catalog["packages"]))
+        self.assertTrue(all(item.get("license") for item in self.catalog["packages"]))
         names = {item["name"] for item in self.catalog["packages"]}
         self.assertTrue({"bash", "git", "curl", "wget", "tar", "unzip"} <= names)
+
+    def test_catalog_and_source_lock_have_one_repository_identity(self):
+        catalog_repo = self.catalog["repository"]
+        lock_repo = self.lock["repository"]
+        for field in ("inrelease_sha256", "packages_index_sha256", "key_fingerprint"):
+            self.assertEqual(catalog_repo[field].lower(), lock_repo[field].lower())
+        self.assertEqual(
+            catalog_repo["keyring_artifact"]["sha256"],
+            lock_repo["keyring_artifact"]["sha256"],
+        )
 
     def test_runtime_status_exposes_versioned_toolchain_inventory(self):
         self.assertIn("ToolchainManager.inventoryJson", self.runtime)
@@ -35,10 +52,16 @@ class AndroidToolchainSourceTests(unittest.TestCase):
         self.assertIn('put("schemaVersion",', self.runtime)
         self.assertIn('put("toolchain",', self.runtime)
         self.assertIn('put("capabilitySchemaVersion",', self.runtime)
+        self.assertIn('put("capabilities", capabilitiesJson())', self.runtime)
+        self.assertIn('fun statusJson(includeToken: Boolean)', self.runtime)
+        capability_ids = re.findall(r'capability\(this,\s*"([a-z_]+)"', self.runtime)
+        self.assertEqual(len(capability_ids), 13)
+        self.assertNotIn("toolchain", capability_ids)
 
     def test_asset_server_has_explicit_toolchain_query(self):
         self.assertIn('"toolchain.json"', self.asset_server)
         self.assertIn("ToolchainManager.inventoryJson", self.asset_server)
+        self.assertIn("HermesRuntime.statusJson(context, includeToken = true)", self.asset_server)
 
     def test_runtime_environment_consumes_active_tool_exports(self):
         self.assertIn("ToolchainManager.pathEntries", self.runtime_env)

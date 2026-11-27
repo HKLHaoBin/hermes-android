@@ -70,8 +70,11 @@ object HermesRuntime {
         lines.toList().subList(from, lines.size)
     }
 
+    /** Compatibility overload for the Issue #1 capability branch. */
+    fun statusJson(includeToken: Boolean): JSONObject = statusJson(null, includeToken)
+
     /** Status for the web UI. The session token is included only for same-origin callers. */
-    fun statusJson(context: Context, includeToken: Boolean): JSONObject {
+    fun statusJson(context: Context?, includeToken: Boolean): JSONObject {
         val s = snapshot
         return JSONObject().apply {
             put("phase", s.phase.name.lowercase())
@@ -87,16 +90,20 @@ object HermesRuntime {
             put("abi", android.os.Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")
             put("schemaVersion", 1)
             put("capabilitySchemaVersion", 1)
-            val toolchain = ToolchainManager.inventoryJson(context)
+            val toolchain = context?.let { ToolchainManager.inventoryJson(it) } ?: JSONObject().apply {
+                put("schema_version", 1)
+                put("state", "unavailable")
+                put("reason", "Android context not supplied")
+                put("packages", JSONArray())
+            }
             put("toolchain", toolchain)
-            put("capabilities", capabilitiesJson(toolchain))
+            put("capabilities", capabilitiesJson())
             if (includeToken) put("token", s.token)
         }
     }
 
     /** Conservative capability declaration; tool/package detail lives in toolchain. */
-    private fun capabilitiesJson(toolchain: JSONObject): JSONArray = JSONArray().apply {
-        val toolchainState = toolchain.optString("state", "unavailable")
+    private fun capabilitiesJson(): JSONArray = JSONArray().apply {
         capability(this, "webui", "supported", "本地 WebView 与 Hermes WebUI")
         capability(this, "runtime", "supported", "固定版本的 Android ARM64 runtime")
         capability(this, "cli_tui", "partial", "当前 Android 启动路径主要提供 WebUI")
@@ -110,8 +117,6 @@ object HermesRuntime {
         capability(this, "job_queue", "unavailable", "尚无持久化任务队列和进程重建恢复")
         capability(this, "backup_restore", "unavailable", "尚无版本化选择性导出与恢复格式")
         capability(this, "real_device_validation", "unavailable", "容器 smoke test 不等于 Android 真机验收")
-        capability(this, "toolchain", if (toolchainState == "ready") "supported" else "unavailable",
-            if (toolchainState == "ready") "已加载签名 Termux ARM64 工具目录" else toolchain.optString("reason", "工具目录不可用"))
     }
 
     private fun capability(out: JSONArray, id: String, state: String, reason: String) {

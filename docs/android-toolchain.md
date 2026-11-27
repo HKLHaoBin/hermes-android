@@ -43,6 +43,13 @@ Android integration
 - `RuntimeEnv.kt` prepends active package PATH/library exports to the sealed base payload and retains explicit `/system/bin`, `/system/xbin`, and `/vendor/bin` fallbacks.
 - The relocator stages the manager script and catalog into the payload manifest as `toolchain_script` and `toolchain_catalog`.
 
+Integration contract with the Issue #1 staging branch
+
+- Keep the parent capability boundary intact: the existing 13 capability IDs remain the only entries in `capabilities`; the toolchain is a separate versioned `toolchain` object.
+- Keep `HermesRuntime.statusJson(includeToken: Boolean)` as a compatibility overload for the capability branch. The Android `AssetServer` must use the context-aware overload so the real app status includes the app-private inventory.
+- The Issue #5 seam is limited to `HermesRuntime.kt`, `AssetServer.kt`, `RuntimeEnv.kt`, the payload relocator, catalog/manager scripts, workflow checks, and documentation. It does not modify `JobLedger.kt`, `HermesService.kt`, job-ledger docs, or unrelated WebUI behavior.
+- When the branches are combined, preserve the capability and job-ledger workflow tests and retain the Issue #5 catalog/transaction contract test step; no local Gradle/APK/device result is implied by the source checks.
+
 Dependency behavior
 
 The v1 manager requires a package's declared dependencies to be active before that package can be installed. This makes missing closure visible in `preflight` instead of silently downloading an unreviewed dependency. A later UI or orchestration layer may install a catalog-locked dependency closure one package at a time; it must preserve the same preflight and transaction rules.
